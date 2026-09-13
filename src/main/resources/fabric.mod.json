@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "fluxvisuals",
+  "version": "${version}",
+  "name": "FluxVisuals",
+  "description": "Client-side visual utility mod with a dark purple ClickGUI and FullBright module.",
+  "authors": [
+    "Fuga"
+  ],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.fuga.fluxvisuals.FluxVisualsClient"
+    ]
+  },
+  "mixins": [
+    "fluxvisuals.mixins.json"
+  ],
+  "jars": [
+    {
+      "file": "META-INF/jars/baritone-unoptimized-fabric-1.15.0.jar"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.14",
+    "minecraft": "1.21.8",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,208 @@
+from flask import Flask, request, jsonify
+from ultralytics import YOLO
+import os
+import logging
+import uuid
+from PIL import Image
+
+# ================================================================
+#                        НАСТРОЙКИ И ИНИЦИАЛИЗАЦИЯ
+# ================================================================
+
+app = Flask(__name__)
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logging.getLogger("ultralytics").setLevel(logging.ERROR)
+
+# Папка для временных файлов
+TEMP_DIR = "temp_captcha"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Путь к модели
+MODEL_PATH = os.path.abspath("best.pt")
+
+if not os.path.exists(MODEL_PATH):
+    logger.error(f"Модель по пути {MODEL_PATH} не найдена!")
+    exit(1)
+
+# Загрузка модели один раз только при старте
+model = YOLO(MODEL_PATH, task='detect')
+logger.info(f"Модель успешно загружена: {MODEL_PATH}")
+
+# ================================================================
+#                        ФУНКЦИЯ ОБРАБОТКИ КАПЧИ
+# ================================================================
+
+def _boxes_at(conf, image_path):
+    results = model.predict(
+        source=image_path,
+        imgsz=640,
+        conf=conf,
+        iou=0.4,
+        verbose=False
+    )
+    boxes = []
+    for result in results:
+        boxes.extend(result.boxes.data.tolist())
+    return boxes
+
+
+def _legacy_filter_digit_row(boxes):
+    """Убирает мусор (лишние '1'/'0' из шумовых кругов): оставляет боксы
+    схожего размера на общей базовой линии цифр."""
+    if not boxes:
+        return []
+    hs = sorted(b[3] - b[1] for b in boxes)
+    ws = sorted(b[2] - b[0] for b in boxes)
+    med_h = hs[len(hs) // 2]
+    med_w = ws[len(ws) // 2]
+    if med_h <= 0 or med_w <= 0:
+        return list(boxes)
+    cys = sorted((b[1] + b[3]) / 2.0 for b in boxes)
+    med_cy = cys[len(cys) // 2]
+    kept = []
+    for b in boxes:
+        h = b[3] - b[1]
+        w = b[2] - b[0]
+        cy = (b[1] + b[3]) / 2.0
+        if h < 0.45 * med_h or h > 2.0 * med_h:
+            continue
+        if w < 0.35 * med_w or w > 2.2 * med_w:
+            continue
+        if abs(cy - med_cy) > 0.75 * med_h:
+            continue
+        kept.append(b)
+    # Не даём фильтру съесть почти всё: если осталось меньше 3 — вернуть исходное
+    if len(kept) < 3 <= len(boxes):
+        return list(boxes)
+    return kept
+
+
+def _overlap(first, second):
+    left = max(first[0], second[0])
+    top = max(first[1], second[1])
+    right = min(first[2], second[2])
+    bottom = min(first[3], second[3])
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    if intersection <= 0.0:
+        return 0.0
+    first_area = max(0.0, first[2] - first[0]) * max(0.0, first[3] - first[1])
+    second_area = max(0.0, second[2] - second[0]) * max(0.0, second[3] - second[1])
+    union = first_area + second_area - intersection
+    return intersection / union if union > 0.0 else 0.0
+
+
+def _filter_digit_row(boxes):
+    """Оставляет одну наиболее уверенную классификацию каждой цифры.
+
+    На FunTime цифры расположены на разных высотах, поэтому фильтр по общей
+    строке отбрасывал правильные символы. Встроенный NMS YOLO учитывает класс,
+    так что конфликтующие классы одной цифры удаляются отдельно.
+    """
+    kept = []
+    for box in sorted(boxes, key=lambda item: item[4], reverse=True):
+        if all(_overlap(box, chosen) < 0.55 for chosen in kept):
+            kept.append(box)
+    return kept
+
+
+def _text_of(boxes):
+    ordered = sorted(boxes, key=lambda b: b[0])  # слева направо
+    return "".join(model.names[int(b[5])] for b in ordered)
+
+
+def process_captcha(image_path):
+    """Без насильного топ-5: берём все боксы, чистим мусор по геометрии,
+    отдаём 4-6 цифр (капча бывает и 4-значной)."""
+    import time
+    started = time.time()
+    fallback_text = ""
+    fallback_n = -1
+    # Мало порогов = быстро: обычно хватает первого же предсказания.
+    for conf in [0.6, 0.45, 0.3]:
+        boxes = _boxes_at(conf, image_path)
+        if not boxes:
+            continue
+        cleaned = _filter_digit_row(boxes)
+        text = _text_of(cleaned)
+        n = len(cleaned)
+        logger.info(f"conf={conf}: boxes={len(boxes)} kept={n} text={text}")
+        if 4 <= n <= 6:
+            logger.info(f"Успешно распознано (conf={conf}, {(time.time() - started) * 1000:.0f}ms): {text}")
+            return text
+        score = min(abs(n - 4), abs(n - 6))
+        fscore = min(abs(fallback_n - 4), abs(fallback_n - 6)) if fallback_n >= 0 else 999
+        if n >= 3 and (fallback_n < 0 or score < fscore):
+            fallback_text, fallback_n = text, n
+    if fallback_n >= 0:
+        logger.info(f"Частично (вне 4-6, {(time.time() - started) * 1000:.0f}ms): {fallback_text}")
+        return fallback_text
+    logger.warning("Не удалось распознать ни одного символа")
+    return ""
+
+
+# ================================================================
+#                           ЭНДПОИНТ SOLVE
+# ================================================================
+
+@app.route('/solve', methods=['POST'])
+def solve():
+    temp_path = None
+
+    try:
+        # Проверка что в запросе есть файл
+        if 'file' not in request.files:
+            return jsonify({'error': 'Отсутствует поле file'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'Файл не выбран'}), 400
+
+        # Уникальное имя каптчи что бы не путаться
+        file_ext = os.path.splitext(file.filename)[1] or '.png'
+        temp_filename = f"{uuid.uuid4()}{file_ext}"
+        temp_path = os.path.join(TEMP_DIR, temp_filename)
+
+        file.save(temp_path)
+
+        # Проверка на существование и валидности файла
+        if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+            logger.error(f"Файл не сохранился или пустой: {temp_path}")
+            return jsonify({'error': 'Не удалось сохранить файл'}), 500
+
+        # Проверка что это изображение вообще
+        try:
+            with Image.open(temp_path) as img:
+                img.verify()
+        except Exception as e:
+            logger.error(f"Повреждённый или некорректный файл изображения: {e}")
+            return jsonify({'error': 'Некорректный файл изображения'}), 400
+
+        # тут крч решает каптчу
+        result_text = process_captcha(temp_path)
+
+        return jsonify({'result': result_text})
+
+    except Exception as e:
+        logger.error(f"Критическая ошибка при обработке: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        # Удаление временного файла
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.error(f"Не удалось удалить временный файл {temp_path}: {e}")
+
+
+# ================================================================
+#                             ЗАПУСК
+# ================================================================
+
+if __name__ == '__main__':
+    print("Запуск сервера распознавания капчи...")
+    print("Эндпоинт: http://0.0.0.0:5000/solve  (POST)")
+    app.run(host='0.0.0.0', port=5000, debug=False)

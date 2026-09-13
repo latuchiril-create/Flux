@@ -1,0 +1,39 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.fuga.fluxvisuals.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ArmorFeatureRendererMixin",
+    "AutoSwapHandledScreenMixin",
+    "AutoSwapInventoryScreenMixin",
+    "BubbleColumnBlockMixin",
+    "CameraMixin",
+    "ClientPlayNetworkHandlerMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "EntityRenderDispatcherMixin",
+    "EntityRenderStateMixin",
+    "EntityRendererMixin",
+    "EquipmentRendererMixin",
+    "FogRendererMixin",
+    "GameRendererMixin",
+    "InGameHudAccessor",
+    "InGameHudMixin",
+    "InGameOverlayRendererMixin",
+    "InventoryScreenAnimationMixin",
+    "ItemResorterHandledScreenMixin",
+    "LivingEntityRendererMixin",
+    "LunarWorldViewMixin",
+    "MinecraftClientAccessor",
+    "MouseMixin",
+    "PlayerListHudMixin",
+    "RecipeBookScreenAnimationMixin",
+    "WorldMixin",
+    "WorldRendererMixin",
+    "BossBarHudAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "fluxvisuals-refmap.json"
+}
