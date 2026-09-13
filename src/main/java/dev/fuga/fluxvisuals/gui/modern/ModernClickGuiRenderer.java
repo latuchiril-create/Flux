@@ -1505,19 +1505,20 @@ public final class ModernClickGuiRenderer {
                     String keyName = lastBoundKeyNames.getOrDefault(mod, "");
                     if (!keyName.isEmpty()) {
                         float keyTextW = ModernFont.getWidth(keyName, 8.5F * scale, ModernFont.Type.INTER_SEMIBOLD);
-                        float badgeW = Math.max(16.0F * scale, keyTextW + 8.0F * scale);
-                        float badgeH = 14.0F * scale;
+                        float badgeH = 15.0F * scale;
+                        float badgeW = keyName.length() <= 1 ? badgeH : Math.max(badgeH, keyTextW + 8.0F * scale);
                         float badgeX = dotsX - badgeW - 6.0F * scale;
                         float badgeY = curY + (itemH - badgeH) * 0.5F;
 
                         float nameW = ModernFont.getWidth(mod.getName(), 11.5F * scale, ModernFont.Type.INTER_MEDIUM);
                         if (badgeX > nameX + nameW + 6.0F * scale) {
                             float bAlpha = alpha * curBadgeAnim;
-                            // Clean dark obsidian keycap styling (no bright purple border)
-                            Render2D.drawRound(context, badgeX, badgeY, badgeW, badgeH, 3.5F * scale, argb(255, 18, 20, 28, bAlpha));
-                            Render2D.drawRoundOutline(context, badgeX, badgeY, badgeW, badgeH, 3.5F * scale, 1.0F, argb(255, 38, 42, 58, bAlpha));
-                            Render2D.drawLine(context, badgeX + 2.0F * scale, badgeY + 1.0F, badgeX + badgeW - 2.0F * scale, badgeY + 1.0F, 1.0F, argb(18, 255, 255, 255, bAlpha));
-                            ModernFont.drawCentered(context, keyName, badgeX + badgeW * 0.5F, centeredTextY(badgeY, badgeH, 8.5F * scale, ModernFont.Type.INTER_SEMIBOLD), 8.5F * scale, argb(255, 160, 172, 192, bAlpha), ModernFont.Type.INTER_SEMIBOLD);
+                            // Clean dark obsidian keycap styling (exact square with geometric optical centering)
+                            Render2D.drawRound(context, badgeX, badgeY, badgeW, badgeH, 4.0F * scale, argb(255, 18, 20, 28, bAlpha));
+                            Render2D.drawRoundOutline(context, badgeX, badgeY, badgeW, badgeH, 4.0F * scale, 1.0F, argb(255, 38, 42, 58, bAlpha));
+                            Render2D.drawLine(context, badgeX + 2.5F * scale, badgeY + 1.0F, badgeX + badgeW - 2.5F * scale, badgeY + 1.0F, 1.0F, argb(18, 255, 255, 255, bAlpha));
+                            float textY = centeredTextY(badgeY, badgeH, 8.5F * scale, ModernFont.Type.INTER_SEMIBOLD) - 1.25F * scale;
+                            ModernFont.drawCentered(context, keyName, badgeX + badgeW * 0.5F, textY, 8.5F * scale, argb(255, 160, 172, 192, bAlpha), ModernFont.Type.INTER_SEMIBOLD);
                         }
                     }
                 } else if (!hasBind) {
