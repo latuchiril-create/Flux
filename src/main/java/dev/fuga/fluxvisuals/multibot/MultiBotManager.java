@@ -13,15 +13,18 @@ import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,6 +73,7 @@ import net.minecraft.network.packet.c2s.common.ResourcePackStatusC2SPacket;
 import net.minecraft.network.packet.c2s.common.CommonPongC2SPacket;
 import net.minecraft.network.packet.c2s.common.KeepAliveC2SPacket;
 import net.minecraft.network.packet.c2s.play.ClientTickEndC2SPacket;
+import net.minecraft.network.packet.c2s.play.CommandExecutionC2SPacket;
 import net.minecraft.network.packet.s2c.play.AdvancementUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.BlockBreakingProgressS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
@@ -114,6 +118,17 @@ public final class MultiBotManager {
     private static final long SOCKET_CONNECT_TIMEOUT_SECONDS = 15L;
     private static final long PAY_ALL_BOT_SPACING_MS = 450L;
     private static final int PAY_BALANCE_RETRY_LIMIT = 10;
+    private static final int RANDOM_BOT_MAX_COUNT = 20;
+    private static final List<String> RANDOM_BOT_ADJECTIVES = List.of(
+            "Silver", "Lunar", "Quiet", "Pixel", "Swift", "Misty", "Copper", "Velvet",
+            "Brave", "Frost", "Amber", "Shadow", "River", "Cloudy", "Sunny", "Noble",
+            "Gentle", "Rapid", "Lucky", "Winter", "Golden", "Crystal", "Hidden", "Cosmic"
+    );
+    private static final List<String> RANDOM_BOT_NOUNS = List.of(
+            "Fox", "Wolf", "Panda", "Raven", "Otter", "Nova", "Lynx", "Owl",
+            "Comet", "Tiger", "Hare", "Falcon", "Badger", "Maple", "Drift", "Finch",
+            "Mango", "Moose", "Bison", "Robin"
+    );
     private static final ThreadLocal<BotSession> CONTEXT = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> ROUTING_MESSAGE = ThreadLocal.withInitial(() -> false);
     /**
@@ -144,6 +159,10 @@ public final class MultiBotManager {
     private static final long CONNECTION_TICK_GAP_WARN_NANOS = 500_000_000L;
     private static final long CONNECTION_TICK_DURATION_WARN_NANOS = 50_000_000L;
     private static final long NETWORK_HEALTH_LOG_INTERVAL_NANOS = 10_000_000_000L;
+    // FunTime applies the /an transfer to a whole proxy address. Sending the
+    // command to every bot in one render tick creates a burst that can rate
+    // limit the primary account sharing that address.
+    private static final long ANARCHY_TRANSFER_SPACING_MILLIS = 2_000L;
     private volatile BotSession activeSession;
     private volatile BotSession mainSession;
     private volatile BotSession pendingAutoSwitchSession;
@@ -1428,7 +1447,7 @@ public final class MultiBotManager {
         if (!ROUTING_MESSAGE.get() && active != null && !active.isMain() && active.getNetworkHandler() != null) {
             ROUTING_MESSAGE.set(true);
             try {
-                active.getNetworkHandler().sendChatCommand(normalized);
+                sendServerCommand(active.getNetworkHandler(), normalized);
             } finally {
                 ROUTING_MESSAGE.set(false);
             }
@@ -1694,6 +1713,11 @@ public final class MultiBotManager {
         return names;
     }
 
+    /** Names exposed to the dot-command autocomplete without leaking command internals. */
+    public List<String> getCommandBotNames(boolean includeMain) {
+        return suggestNames(includeMain);
+    }
+
     private List<String> suggestPayTargetsAndAll() {
         List<String> names = suggestNames(false);
         names.add("all");
@@ -1710,6 +1734,10 @@ public final class MultiBotManager {
 
     private List<String> suggestPresetNames() {
         return botPresets.keySet().stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
+    }
+
+    public List<String> getCommandPresetNames() {
+        return suggestPresetNames();
     }
 
     private void executeCommand(MinecraftClient client, String commandLine) {
@@ -2185,6 +2213,10 @@ public final class MultiBotManager {
                 .toList();
     }
 
+    public List<String> getCommandFunctionNames() {
+        return suggestFunctionNames();
+    }
+
     private List<String> suggestBaritoneCommands() {
         return List.of(
                 "help", "goto", "goal", "path", "mine", "tunnel", "follow",
@@ -2197,6 +2229,10 @@ public final class MultiBotManager {
         );
     }
 
+    public List<String> getCommandBaritoneNames() {
+        return suggestBaritoneCommands();
+    }
+
     private void addBot(MinecraftClient client, String name) {
         ensureMainSession(client);
         if (mainSession == null || mainSession.getAddress().isBlank()) {
@@ -2204,6 +2240,34 @@ public final class MultiBotManager {
             return;
         }
         String trimmed = name == null ? "" : name.trim();
+        String[] addArguments = trimmed.isBlank() ? new String[0] : trimmed.split("\\s+");
+        if (addArguments.length > 0 && addArguments[0].equalsIgnoreCase("random")) {
+            if (addArguments.length > 2
+                    || (addArguments.length == 2 && !addArguments[1].matches("\\d+"))) {
+                feedback(client, "Использование: .bot add random [количество от 1 до "
+                        + RANDOM_BOT_MAX_COUNT + "]", Formatting.RED);
+                return;
+            }
+            int count = 1;
+            if (addArguments.length == 2) {
+                try {
+                    count = Integer.parseInt(addArguments[1]);
+                } catch (NumberFormatException ignored) {
+                    count = 0;
+                }
+            }
+            if (count < 1 || count > RANDOM_BOT_MAX_COUNT) {
+                feedback(client, "Количество случайных ботов должно быть от 1 до "
+                        + RANDOM_BOT_MAX_COUNT + ".", Formatting.RED);
+                return;
+            }
+            addRandomBots(client, count);
+            return;
+        }
+        if (addArguments.length != 1) {
+            feedback(client, "Использование: .bot add <ник> или .bot add random [количество]", Formatting.RED);
+            return;
+        }
         if (!trimmed.matches("[A-Za-z0-9_]{3,16}")) {
             feedback(client, "Ник должен содержать 3-16 букв, цифр или символов подчёркивания.", Formatting.RED);
             return;
@@ -2238,6 +2302,68 @@ public final class MultiBotManager {
         BotDebug.info("CONNECT_REQUEST", session, "address=" + session.getAddress());
         feedback(client, "Подключаю " + trimmed + " к " + session.getAddress() + "...", Formatting.YELLOW);
         startConnection(client, session);
+    }
+
+    private void addRandomBots(MinecraftClient client, int count) {
+        Set<String> occupied = collectOccupiedNames(client);
+        int started = 0;
+        for (int i = 0; i < count; i++) {
+            String generated = generateRandomBotName(occupied);
+            if (generated == null) {
+                break;
+            }
+            occupied.add(generated.toLowerCase(Locale.ROOT));
+            addBot(client, generated);
+            started++;
+        }
+        if (started > 0) {
+            feedback(client, "Запускаю " + started + " ботов со свободными именами.", Formatting.GREEN);
+        } else {
+            feedback(client, "Не удалось подобрать свободное имя бота.", Formatting.RED);
+        }
+    }
+
+    private Set<String> collectOccupiedNames(MinecraftClient client) {
+        Set<String> occupied = new HashSet<>();
+        for (BotSession session : sessions) {
+            if (session.getName() != null && !session.getName().isBlank()) {
+                occupied.add(session.getName().toLowerCase(Locale.ROOT));
+            }
+        }
+        ClientPlayNetworkHandler handler = mainSession == null ? null : mainSession.getNetworkHandler();
+        if (handler == null && client != null) {
+            handler = client.getNetworkHandler();
+        }
+        if (handler != null) {
+            for (PlayerListEntry entry : handler.getPlayerList()) {
+                if (entry != null && entry.getProfile() != null && entry.getProfile().getName() != null) {
+                    occupied.add(entry.getProfile().getName().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return occupied;
+    }
+
+    private String generateRandomBotName(Set<String> occupied) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int attempt = 0; attempt < 256; attempt++) {
+            String base = RANDOM_BOT_ADJECTIVES.get(random.nextInt(RANDOM_BOT_ADJECTIVES.size()))
+                    + RANDOM_BOT_NOUNS.get(random.nextInt(RANDOM_BOT_NOUNS.size()));
+            String candidate = base;
+            if (occupied.contains(candidate.toLowerCase(Locale.ROOT))) {
+                candidate = base + random.nextInt(10, 100);
+            }
+            if (candidate.length() <= 16 && !occupied.contains(candidate.toLowerCase(Locale.ROOT))) {
+                return candidate;
+            }
+        }
+        for (int suffix = 10; suffix < 1000; suffix++) {
+            String candidate = "FluxBot" + suffix;
+            if (!occupied.contains(candidate.toLowerCase(Locale.ROOT))) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private void startConnection(MinecraftClient client, BotSession session) {
@@ -2754,28 +2880,34 @@ public final class MultiBotManager {
             if (session.isMain() || session.getState() == BotSession.State.DISCONNECTED) {
                 continue;
             }
+            long delay = (long) sent * ANARCHY_TRANSFER_SPACING_MILLIS;
             sent++;
-            runAfterAntiAfk(session, 0L, () -> {
-                boolean[] sentFromSession = {false};
-                ClientPlayNetworkHandler handler = session.getNetworkHandler();
-                if (handler != null && session.getConnection() != null
-                        && session.getConnection().isOpen()
-                        && session.getConnection().getPacketListener() == handler) {
-                    session.getAutoResellAFK().resumeAfterModeSwitch();
-                    handler.sendChatCommand("an" + number);
-                    sentFromSession[0] = true;
-                    BotDebug.info("ANARCHY_COMMAND_SENT", session, "command=/an" + number);
-                } else {
-                    pendingBotCommands.put(session, "an" + number);
-                    BotDebug.info("ANARCHY_COMMAND_PENDING", session,
-                            "command=/an" + number + ", reason=protocol_transition");
-                    sentFromSession[0] = true;
-                }
-            });
+            runAfterAntiAfk(session, delay, () -> sendBotToAnarchy(session, number, delay));
         }
         BotDebug.info("ANARCHY_ALL_SENT", activeSession, "number=" + number + ", bots=" + sent);
-        feedback(client, "Команду /an" + number + " отправили боты: " + sent + ".",
+        feedback(client, "Переход /an" + number + " поставлен в очередь для ботов: " + sent + ".",
                 sent > 0 ? Formatting.GREEN : Formatting.RED);
+    }
+
+    /** Sends one /an only after its session has a stable PLAY handler. */
+    private void sendBotToAnarchy(BotSession session, String number, long delay) {
+        String command = "an" + number;
+        if (!isCurrentPlayHandler(session)) {
+            pendingBotCommands.put(session, command);
+            BotDebug.info("ANARCHY_COMMAND_PENDING", session,
+                    "command=/" + command + ", delay_ms=" + delay + ", reason=play_not_stable");
+            return;
+        }
+        ClientPlayNetworkHandler handler = session.getNetworkHandler();
+        if (sendServerCommand(handler, command)) {
+            session.getAutoResellAFK().resumeAfterModeSwitch();
+            BotDebug.info("ANARCHY_COMMAND_SENT", session,
+                    "command=/" + command + ", delay_ms=" + delay);
+            return;
+        }
+        pendingBotCommands.put(session, command);
+        BotDebug.info("ANARCHY_COMMAND_PENDING", session,
+                "command=/" + command + ", delay_ms=" + delay + ", reason=handler_changed");
     }
 
     private void executeBaritone(MinecraftClient client, String input) {
@@ -2833,7 +2965,7 @@ public final class MultiBotManager {
                         && session.getConnection().isOpen()
                         && session.getConnection().getPacketListener() == handler) {
                     if (message.startsWith("/") && message.length() > 1) {
-                        handler.sendChatCommand(message.substring(1));
+                        sendServerCommand(handler, message.substring(1));
                     } else {
                         handler.sendChatMessage(message);
                     }
@@ -2856,20 +2988,45 @@ public final class MultiBotManager {
         }
         String command = pendingBotCommands.get(session);
         ClientPlayNetworkHandler handler = session.getNetworkHandler();
-        if (command == null || handler == null || session.getConnection() == null
+        MinecraftClient client = MinecraftClient.getInstance();
+        // runWithContext temporarily installs the bot's player. During a
+        // configuration/world handoff that player can be null even though the
+        // socket is still open. Fabric's sendChatCommand hook dereferences
+        // MinecraftClient#getNetworkHandler in that window, so keep the
+        // command queued until the bot has a live play player again.
+        if (command == null || handler == null || session.isWorldStabilizing() || session.getPlayer() == null
+                || client.player == null || client.getNetworkHandler() != handler
+                || session.getConnection() == null
                 || !session.getConnection().isOpen()
                 || session.getConnection().getPacketListener() != handler) {
             return;
         }
         pendingBotCommands.remove(session, command);
         if (command.startsWith("/") && command.length() > 1) {
-            handler.sendChatCommand(command.substring(1));
+            sendServerCommand(handler, command.substring(1));
         } else if (command.matches("[A-Za-z0-9_]+(?:\\s+.*)?")) {
-            handler.sendChatCommand(command);
+            sendServerCommand(handler, command);
         } else {
             handler.sendChatMessage(command);
         }
         BotDebug.info("BOT_COMMAND_FLUSHED", session, "payload=" + command.replace('\n', ' '));
+    }
+
+    /** Sends a server command without entering Fabric's client-command hook. */
+    private static boolean sendServerCommand(ClientPlayNetworkHandler handler, String command) {
+        if (handler == null || command == null || command.isBlank()) {
+            return false;
+        }
+        ClientConnection connection = handler.getConnection();
+        if (connection == null || !connection.isOpen() || connection.getPacketListener() != handler) {
+            return false;
+        }
+        String normalized = command.startsWith("/") ? command.substring(1) : command;
+        if (normalized.isBlank()) {
+            return false;
+        }
+        connection.send(new CommandExecutionC2SPacket(normalized));
+        return true;
     }
 
     private void dropItems(MinecraftClient client, String name) {
@@ -3029,7 +3186,7 @@ public final class MultiBotManager {
             if (handler != null && sender.getConnection() != null
                     && sender.getConnection().isOpen()
                     && sender.getConnection().getPacketListener() == handler) {
-                handler.sendChatCommand("pay " + recipient + " " + amount);
+                sendServerCommand(handler, "pay " + recipient + " " + amount);
                 sent[0] = true;
             }
         });
@@ -3072,7 +3229,7 @@ public final class MultiBotManager {
                         if (handler != null && sender.getConnection() != null
                                 && sender.getConnection().isOpen()
                                 && sender.getConnection().getPacketListener() == handler) {
-                            handler.sendChatCommand("money");
+                            sendServerCommand(handler, "money");
                             sent[0] = true;
                         }
                     });
@@ -3305,7 +3462,7 @@ public final class MultiBotManager {
             session.runWithContext(() -> {
                 ClientPlayNetworkHandler handler = MinecraftClient.getInstance().getNetworkHandler();
                 if (handler != null) {
-                    handler.sendChatCommand("tpa " + destination);
+                    sendServerCommand(handler, "tpa " + destination);
                     sentFromSession[0] = true;
                 }
             });
@@ -3898,7 +4055,7 @@ public final class MultiBotManager {
                     ClientPlayNetworkHandler handler = session.getNetworkHandler();
                     if (handler != null) {
                         if (command.startsWith("/")) {
-                            handler.sendChatCommand(command.substring(1));
+                            sendServerCommand(handler, command.substring(1));
                         } else {
                             handler.sendChatMessage(command);
                         }
@@ -4062,6 +4219,7 @@ public final class MultiBotManager {
     private static void disconnect(BotSession session, String reason) {
         BotDebug.info("MANUAL_DISCONNECT", session, "reason=" + reason);
         session.invalidateConnectionGeneration();
+        session.clearBossBars();
         ClientConnection connection = session.getConnection();
         if (connection != null && connection.isOpen()) {
             connection.disconnect(Text.literal(reason));
@@ -4090,7 +4248,7 @@ public final class MultiBotManager {
         }
     }
 
-    private static void showHelp(MinecraftClient client) {
+    private void showHelp(MinecraftClient client) {
         feedback(client, ".bot chat <ник|all> [on|off] — трансляция сообщений из чата бота в ваш чат", Formatting.GRAY);
         feedback(client, ".bot goto me [bot] | .bot lineup | .bot resell on|off", Formatting.GRAY);
         feedback(client, ".bot antiafk on|off|вкл|выкл — поддержание соединения без искусственных movement/rotation-пакетов", Formatting.GRAY);
@@ -4101,9 +4259,17 @@ public final class MultiBotManager {
         feedback(client, ".bot pay [name|all] <сумма|all>", Formatting.GRAY);
         feedback(client, ".bot proxy <user:pass@host:port|off> | .bot <ник> proxy <настройки|off>", Formatting.GRAY);
         feedback(client, ".bot preset save|remove|load <имя>", Formatting.GRAY);
-        feedback(client, ".bot добавить <ник> | .bot add <ник>", Formatting.GRAY);
+        feedback(client, ".bot добавить <ник> | .bot add <ник> | .bot add random [количество]", Formatting.GRAY);
         feedback(client, ".bot удалить <ник> | .bot удалитьвсех", Formatting.GRAY);
         feedback(client, ".bot список | .bot переключить <ник> | .bot основной", Formatting.GRAY);
         feedback(client, ".bot команда <сообщение или /команда> | .bot тп", Formatting.GRAY);
+        List<String> functionNames = suggestFunctionNames();
+        if (!functionNames.isEmpty()) {
+            feedback(client, "Функции для .bot function: " + String.join(", ", functionNames), Formatting.GRAY);
+        }
+        List<String> botNames = suggestNames(false);
+        if (!botNames.isEmpty()) {
+            feedback(client, "Подключённые имена ботов для подсказок: " + String.join(", ", botNames), Formatting.GRAY);
+        }
     }
 }

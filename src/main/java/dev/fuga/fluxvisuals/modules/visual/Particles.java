@@ -3,11 +3,14 @@ package dev.fuga.fluxvisuals.modules.visual;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.mojang.blaze3d.platform.SourceFactor;
+import com.mojang.blaze3d.platform.DestFactor;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.fuga.fluxvisuals.FluxVisualsClient;
 import dev.fuga.fluxvisuals.modules.Module;
 import dev.fuga.fluxvisuals.modules.ModuleCategory;
 import java.util.EnumSet;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -19,6 +22,7 @@ import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -41,12 +45,13 @@ public final class Particles extends Module {
     private static final float WORLD_DRIFT_DRAG = 0.935F;
     private static final float BOUNCE = 0.70F;
     private static final RenderLayer[] MAIN_LAYERS = new RenderLayer[TextureType.values().length];
-    private static final RenderLayer[] OUTLINE_LAYERS = new RenderLayer[TextureType.values().length];
+    private static final TextureType[] TEXTURE_TYPES = TextureType.values();
+    private static final SpawnMode[] SPAWN_MODES = SpawnMode.values();
 
     private static final RenderPipeline PARTICLE_SPRITE_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.ENTITY_EMISSIVE_SNIPPET)
             .withLocation(Identifier.of("fluxvisuals", "pipeline/particle_shape_sprite"))
             .withVertexShader(Identifier.of("fluxvisuals", "core/target_sprite"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_sprite"))
+            .withFragmentShader(Identifier.of("fluxvisuals", "core/particle_sprite"))
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withDepthWrite(false)
@@ -54,16 +59,33 @@ public final class Particles extends Module {
             .withVertexFormat(VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL, VertexFormat.DrawMode.QUADS)
             .build());
 
-    private static final RenderPipeline PARTICLE_OUTLINE_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.ENTITY_EMISSIVE_SNIPPET)
-            .withLocation(Identifier.of("fluxvisuals", "pipeline/particle_shape_outline"))
-            .withVertexShader(Identifier.of("fluxvisuals", "core/particle_outline_shape"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/particle_outline_shape"))
-            .withBlend(BlendFunction.ADDITIVE)
+    private static final RenderPipeline PARTICLE_GLOW_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.ENTITY_EMISSIVE_SNIPPET)
+            .withLocation(Identifier.of("fluxvisuals", "pipeline/particle_glow"))
+            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withBlend(new BlendFunction(SourceFactor.SRC_ALPHA, DestFactor.ONE, SourceFactor.ZERO, DestFactor.ONE))
+            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withDepthWrite(false)
             .withCull(false)
             .withVertexFormat(VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL, VertexFormat.DrawMode.QUADS)
             .build());
+    private static final RenderLayer PARTICLE_GLOW_LAYER = RenderLayer.of(
+            "fluxvisuals_particle_glow", 32768, false, false, PARTICLE_GLOW_PIPELINE,
+            RenderLayer.MultiPhaseParameters.builder()
+                    .texture(RenderPhase.NO_TEXTURE)
+                    .lightmap(RenderPhase.DISABLE_LIGHTMAP)
+                    .overlay(RenderPhase.DISABLE_OVERLAY_COLOR)
+                    .target(RenderPhase.TRANSLUCENT_TARGET)
+                    .build(false));
 
+    // Reused frame data: visibility, interpolation and size are computed once.
+    private final int[] frameHead = new int[TEXTURE_TYPES.length];
+    private final int[] frameNext = new int[HARD_CAP];
+    private final float[] frameX = new float[HARD_CAP];
+    private final float[] frameY = new float[HARD_CAP];
+    private final float[] frameZ = new float[HARD_CAP];
+    private final float[] frameSize = new float[HARD_CAP];
+    private final float[] frameAlpha = new float[HARD_CAP];
     private final Random random = new Random();
     private final EnumSet<SpawnMode> spawnModes = EnumSet.of(SpawnMode.IN_WORLD);
     private final BlockPos.Mutable collisionPos = new BlockPos.Mutable();
@@ -131,7 +153,7 @@ public final class Particles extends Module {
             prevZ[i] = z[i];
             angle[i] += angularVelocity[i];
 
-            SpawnMode spawnMode = SpawnMode.values()[mode[i]];
+            SpawnMode spawnMode = SPAWN_MODES[mode[i]];
             if (spawnMode == SpawnMode.IN_WORLD && !burst[i]) {
                 velocityX[i] *= WORLD_DRIFT_DRAG;
                 velocityY[i] *= WORLD_DRIFT_DRAG;
@@ -163,68 +185,66 @@ public final class Particles extends Module {
         Vec3d camera = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
         int rgb = colorRgb();
-        TextureType[] textureTypes = TextureType.values();
-
-        if (outlineEnabled) {
-            for (TextureType textureType : textureTypes) {
-                renderTexturePass(context, matrices, camera, tickDelta, rgb, textureType, ParticlePass.OUTLINE);
-            }
-        }
-        for (TextureType textureType : textureTypes) {
-            renderTexturePass(context, matrices, camera, tickDelta, rgb, textureType, ParticlePass.MAIN);
-        }
-    }
-
-    private void renderTexturePass(WorldRenderContext context, MatrixStack matrices, Vec3d camera, float tickDelta,
-                                   int rgb, TextureType textureType, ParticlePass pass) {
-        VertexConsumer consumer = null;
-        int targetTexture = textureType.ordinal();
+        Arrays.fill(frameHead, -1);
         for (int i = 0; i < activeCount; i++) {
-            if ((texture[i] & 255) != targetTexture) {
-                continue;
-            }
-
             double distanceSq = distanceSquaredTo(i, camera);
-            if (!burst[i] && distanceSq > RENDER_DISTANCE_SQ) {
-                continue;
-            }
+            if (distanceSq > RENDER_DISTANCE_SQ) continue;
             float progress = (age[i] + tickDelta) / Math.max(1.0F, maxAge[i]);
-            float alpha = alpha(i, progress) * particleAlpha;
-            if (alpha <= 0.01F) {
-                continue;
-            }
-
-            double drawX = lerp(prevX[i], x[i], tickDelta) - camera.x;
-            double drawY = lerp(prevY[i], y[i], tickDelta) - camera.y;
-            double drawZ = lerp(prevZ[i], z[i], tickDelta) - camera.z;
+            float opacity = alpha(i, progress) * particleAlpha;
+            if (opacity <= 0.01F) continue;
             float distanceFade = burst[i] ? 1.0F : (float) Math.max(0.62D, 1.0D - distanceSq / (RENDER_DISTANCE_SQ * 1.35D));
             float drawSize = size * scale[i] * distanceFade;
-            if (SpawnMode.values()[mode[i]] == SpawnMode.IN_WORLD && !burst[i]) {
-                drawSize *= 0.72F + alpha * 0.58F;
+            if (SPAWN_MODES[mode[i]] == SpawnMode.IN_WORLD && !burst[i]) {
+                drawSize *= 0.72F + opacity * 0.58F;
             }
-            if (consumer == null) {
-                consumer = context.consumers().getBuffer(layerFor(textureType, pass));
+            frameX[i] = (float) (lerp(prevX[i], x[i], tickDelta) - camera.x);
+            frameY[i] = (float) (lerp(prevY[i], y[i], tickDelta) - camera.y);
+            frameZ[i] = (float) (lerp(prevZ[i], z[i], tickDelta) - camera.z);
+            frameSize[i] = drawSize;
+            frameAlpha[i] = opacity;
+            int type = texture[i] & 255;
+            frameNext[i] = frameHead[type];
+            frameHead[type] = i;
+        }
+        if (outlineEnabled) {
+            VertexConsumer glow = null;
+            for (int head : frameHead) {
+                for (int i = head; i >= 0; i = frameNext[i]) {
+                    if (glow == null) glow = context.consumers().getBuffer(PARTICLE_GLOW_LAYER);
+                    drawFrameParticle(context, matrices, glow, i, tickDelta, rgb, true);
+                }
             }
-
-            matrices.push();
-            matrices.translate(drawX, drawY, drawZ);
-            matrices.multiply(context.camera().getRotation());
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotation(angle[i] + angularVelocity[i] * tickDelta));
-
-            int passRgb = particlePassColor(rgb, pass);
-            float passAlpha = alpha;
-            if (pass == ParticlePass.OUTLINE) {
-                float outlineSize = drawSize * 1.10F;
-                matrices.scale(outlineSize, outlineSize, outlineSize);
-                drawQuad(consumer, matrices.peek(), Math.min(1.0F, alpha * 0.95F), passRgb);
-            } else {
-                matrices.scale(drawSize, drawSize, drawSize);
-                drawQuad(consumer, matrices.peek(), passAlpha, passRgb);
+            if (glow != null) flushLayer(context, PARTICLE_GLOW_LAYER);
+        }
+        for (TextureType type : TEXTURE_TYPES) {
+            int head = frameHead[type.ordinal()];
+            if (head < 0) continue;
+            RenderLayer layer = mainLayer(type);
+            VertexConsumer consumer = context.consumers().getBuffer(layer);
+            for (int i = head; i >= 0; i = frameNext[i]) {
+                drawFrameParticle(context, matrices, consumer, i, tickDelta, rgb, false);
             }
-            matrices.pop();
+            flushLayer(context, layer);
         }
     }
 
+    private void drawFrameParticle(WorldRenderContext context, MatrixStack matrices, VertexConsumer consumer,
+                                   int i, float tickDelta, int rgb, boolean glow) {
+        matrices.push();
+        matrices.translate(frameX[i], frameY[i], frameZ[i]);
+        matrices.multiply(context.camera().getRotation());
+        if (!glow) matrices.multiply(RotationAxis.POSITIVE_Z.rotation(angle[i] + angularVelocity[i] * tickDelta));
+        float extent = frameSize[i] * (glow ? 2.4F : 1.0F);
+        matrices.scale(extent, extent, extent);
+        drawQuad(consumer, matrices.peek(), frameAlpha[i] * (glow ? 0.48F : 1.0F), rgb);
+        matrices.pop();
+    }
+
+    private static void flushLayer(WorldRenderContext context, RenderLayer layer) {
+        if (context.consumers() instanceof VertexConsumerProvider.Immediate immediate) {
+            immediate.draw(layer);
+        }
+    }
     public TextureType getPreviewTexture() {
         return previewTexture;
     }
@@ -809,46 +829,8 @@ public final class Particles extends Module {
         return cached;
     }
 
-    private static RenderLayer outlineLayer(TextureType textureType) {
-        int index = textureType.ordinal();
-        RenderLayer cached = OUTLINE_LAYERS[index];
-        if (cached != null) {
-            return cached;
-        }
-        Identifier texture = particleTexture(textureType);
-        cached = RenderLayer.of(
-                "fluxvisuals_particle_shape_outline_" + textureType.name().toLowerCase(Locale.ROOT),
-                1536,
-                false,
-                true,
-                PARTICLE_OUTLINE_PIPELINE,
-                RenderLayer.MultiPhaseParameters.builder()
-                        .texture(new RenderPhase.Texture(texture, false))
-                        .lightmap(RenderPhase.DISABLE_LIGHTMAP)
-                        .overlay(RenderPhase.DISABLE_OVERLAY_COLOR)
-                        .target(RenderPhase.TRANSLUCENT_TARGET)
-                        .build(false)
-        );
-        OUTLINE_LAYERS[index] = cached;
-        return cached;
-    }
-
-    private static RenderLayer layerFor(TextureType textureType, ParticlePass pass) {
-        return switch (pass) {
-            case OUTLINE -> outlineLayer(textureType);
-            case MAIN -> mainLayer(textureType);
-        };
-    }
-
     private static Identifier particleTexture(TextureType textureType) {
         return textureType.resourceId();
-    }
-
-    private static int particlePassColor(int rgb, ParticlePass pass) {
-        return switch (pass) {
-            case OUTLINE -> rgb;
-            case MAIN -> rgb;
-        };
     }
 
     private static boolean isCriticalHit(MinecraftClient client) {
@@ -922,11 +904,6 @@ public final class Particles extends Module {
         public Identifier id() {
             return id;
         }
-    }
-
-    private enum ParticlePass {
-        OUTLINE,
-        MAIN
     }
 
     public enum SpawnMode {

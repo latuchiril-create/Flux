@@ -7,6 +7,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.gui.hud.PlayerListHud;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
@@ -36,7 +37,9 @@ public abstract class InGameHudMixin {
         // available after an account switch, but it must never submit hotbar,
         // boss-bar, scoreboard, tab-list or overlay draw calls while hidden.
         if (MultiBotManager.isBackgroundContext()
-                || (client != null && client.currentScreen != null && !(client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen))) {
+                || (client != null && client.currentScreen != null
+                        && !(client.currentScreen instanceof net.minecraft.client.gui.screen.ChatScreen)
+                        && !(client.currentScreen instanceof HandledScreen))) {
             ci.cancel();
         }
     }
@@ -44,7 +47,20 @@ public abstract class InGameHudMixin {
     @Inject(method = "render", at = @At("TAIL"))
     private void fluxvisuals$renderWatermark(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         FluxVisualsClient.MODULE_MANAGER.getTargetHud().render(context, client);
+        FluxVisualsClient.MODULE_MANAGER.getTestHud().render(context, client);
         FluxVisualsClient.MODULE_MANAGER.getWatermark().render(context, client);
+        if (dev.fuga.fluxvisuals.gui.modern.ModernGui2Renderer.INSTANCE != null
+                && dev.fuga.fluxvisuals.gui.modern.ModernGui2Renderer.INSTANCE.isClosing()
+                && !dev.fuga.fluxvisuals.gui.modern.ModernGui2Renderer.INSTANCE.isClosed()) {
+            dev.fuga.fluxvisuals.gui.modern.ModernGui2Renderer.INSTANCE.render(
+                    context,
+                    client.getWindow().getScaledWidth(),
+                    client.getWindow().getScaledHeight(),
+                    -1,
+                    -1,
+                    tickCounter.getTickProgress(false)
+            );
+        }
     }
 
     @Inject(method = "renderPlayerList", at = @At("HEAD"), cancellable = true)

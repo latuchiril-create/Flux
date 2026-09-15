@@ -1,215 +1,216 @@
-Создай статичный UI-макет окна настроек «Автобай» для игрового клиента.
-
-ВАЖНО: это именно дизайн интерфейса, не код. Покажи одно цельное окно приложения на тёмном фоне.
-
-ОСНОВНАЯ ИДЕЯ
-Автобай сейчас настраивается для МЕЧЕЙ, но в интерфейсе должен остаться компактный выбор категории предмета.
-Категория по умолчанию: «Мечи».
-
-Не делай отдельные вкладки:
-— Основные
-— Фильтры
-— Параметры
-— Дополнительно
-
-Никакого левого sidebar.
-Все настройки находятся в одном цельном окне и читаются сверху вниз.
-
-СТИЛЬ
-Ориентируйся на приложенные референсы по цветовой гамме:
-— почти чёрный холодный фон;
-— немного более светлая поверхность окна;
-— тонкие серо-синие borders;
-— основной текст светло-серый;
-— вторичный текст приглушённый серо-синий;
-— фиолетовый используется ТОЛЬКО для активных элементов;
-— белые/светлые бегунки переключателей;
-— никаких кислотных цветов.
-
-Примерная палитра:
-background: #0c0e14
-surface: #11141c
-surface secondary: #151924
-border: #252b3a
-primary text: #d9dde8
-secondary text: #8991a5
-accent: #7c3aed / #8b5cf6
-
-НЕ ДЕЛАЙ:
-— glassmorphism;
-— огромные glow-эффекты;
-— неоновую рамку вокруг всего интерфейса;
-— градиент на каждом элементе;
-— иконку около каждой строки;
-— декоративные карточки ради карточек;
-— огромные заголовки;
-— игровые мечи/сундуки как декоративные арты;
-— fake 3D;
-— floating elements;
-— «AI dashboard» стиль;
-— случайные графики;
-— статистику;
-— rarity / редкость меча;
-— кнопки «обычный / редкий / эпический / легендарный»;
-— разделение интерфейса на страницы или категории настроек;
-— слишком большие отступы.
-
-Интерфейс должен выглядеть как реально спроектированная панель игрового клиента:
-плотный, спокойный, аккуратный, функциональный desktop UI.
-
-КОМПОЗИЦИЯ
-
-Верхняя строка:
-«Автобай»
-небольшой приглушённый текст рядом или снизу: «Автоматическая покупка предметов»
-
-Справа небольшой аккуратный переключатель:
-«Автобай включён»
-
-Ниже первая строка:
-
-Категория
-[ Мечи                         ▾ ]
-
-Это обычный качественный select/dropdown.
-Он не должен занимать половину экрана.
-
-Дальше настройки без отдельных огромных контейнеров.
-
-1. Фильтр цены
-
-Слева:
-«Максимальная цена»
-
-Справа аккуратное числовое поле:
-[ 3 000 000 ]
-
-Рядом или внутри поля можно использовать небольшой muted suffix/indicator валюты, если это выглядит естественно.
-
-2. Прочность
-
-Строка:
-«Учитывать прочность»       [ toggle ]
-
-Когда включено, ниже появляется:
-
-«Минимальная прочность»
-
-тонкий slider -------------------------------- [ 10% ]
-
-Slider должен выглядеть современно:
-узкий track, фиолетовая заполненная часть, небольшой круглый thumb.
-Без огромного свечения.
-
-3. Чары
-
-«Обязательные чары»
-
-Большой аккуратный multi-select:
-[ Острота V × ] [ Вампиризм II × ]     Добавить чары...
-
-Следующая строка:
-
-«Игнорируемые чары»
-
-[ Нестабильный × ] [ Проклятие × ]     Добавить чары...
-
-Теги компактные.
-Не превращай их в яркие фиолетовые капсулы.
-Лучше тёмные chip-компоненты с тонкой фиолетовой active border.
-
-4. Автоперепродажа
-
-«Авто-перепродажа»         [ toggle ]
-
-Под названием маленьким приглушённым текстом:
-«Перепродавать подходящие купленные предметы»
-
-Если включено, рядом или ниже:
-
-«Минимальная прибыль»
-
-slider ------------------------------ [ 15% ]
-
-5. Анти-слив баланса
-
-«Анти-слив баланса»        [ toggle ]
-
-Небольшое описание:
-«Останавливать покупки при достижении лимита»
-
-При включении:
-«Минимальный остаток»
-[ 500 000 ]
-
-6. Анархия
-
-«Свитч по анархиям»        [ toggle ]
-
-Ниже компактный multi-select:
-[ 231 × ] [ 232 × ] [ 234 × ] [ 233 × ]
-
-Не делай эти элементы огромными.
-
-7. Дополнительные настройки обычными строками:
-
-«Реклама на анархии»       [ toggle ]
-
-«Аренда слотов»            [ toggle ]
-
-8. Запрещённые продавцы
-
-Поле:
-«Запрещённые продавцы»
-
-[ player123 × ] [ badseller × ]       Добавить ник...
-
-НИКАКИХ НАСТРОЕК БАФФОВ.
-Не добавлять:
-— нужные баффы;
-— игнорируемые баффы;
-— только взрывные баффы.
-
-НИКАКОЙ РЕДКОСТИ ПРЕДМЕТОВ.
-
-НИЖНЯЯ ЧАСТЬ
-
-Тонкий separator.
-
-Слева текстовая secondary-кнопка:
-«Сбросить»
-
-Справа:
-secondary button «Отмена»
-primary button «Сохранить»
-
-Primary button не должен быть огромной glowing-плашкой.
-Обычная качественная кнопка высотой примерно 40–44 px,
-фиолетовый фон,
-небольшой hover-like highlight,
-радиус примерно 8–10 px.
-
-ВИЗУАЛЬНАЯ СИСТЕМА
-
-Используй:
-— радиус полей 7–10 px;
-— радиус основного окна около 12–14 px;
-— высота input 38–42 px;
-— одинаковую сетку;
-— выравнивание подписей;
-— визуальную иерархию через spacing, font weight и тонкие separators;
-— максимум 1–2 декоративных акцента на всём экране.
-
-Иконки использовать только там, где они действительно нужны:
-например маленькая стрелка dropdown и крестик удаления chip.
-Не ставить иконки возле «Цена», «Прочность», «Автоперепродажа» и каждой другой настройки.
-
-Шрифт:
-современный нейтральный sans-serif в духе Inter / Geist / SF Pro.
-Без футуристического sci-fi шрифта.
-
-Главная цель:
-интерфейс должен выглядеть как работа сильного UI/UX-дизайнера игрового клиента, а не как автоматически сгенерированный SaaS dashboard.
-
-Сделай дизайн аккуратным, компактным и правдоподобным.
-Фокус на хорошей типографике, spacing, формах контролов и состоянии элементов.
+Improve the existing FLUX UI in the current project.
+
+Do NOT redesign it from scratch.
+Do NOT change the overall layout.
+Do NOT break existing functionality.
+
+Goal:
+Make the interface feel cleaner, more premium, more deliberate, and less AI-generated / generic.
+
+This is a Minecraft client / game-tool interface, NOT:
+- a SaaS dashboard
+- a mobile app
+- a shadcn-style UI
+- a Discord clone
+- a generic futuristic AI dashboard
+
+First inspect the existing UI implementation and reuse the current architecture/components.
+
+Main issues to fix:
+- too many borders
+- too many rounded rectangles
+- too many pills/badges
+- too many icon buttons
+- excessive nested cards
+- excessive blue-gray colors
+- too many visual indicators for the same state
+- overly generic toggles
+- excessive section headers
+- repetitive spacing
+- too much visual noise
+- settings panel looks auto-generated
+- color picker looks like a generic library component
+
+Design direction:
+- dark, dense, desktop game-client UI
+- flatter surfaces
+- fewer containers
+- subtle borders
+- small radii
+- neutral grays
+- one cold cyan/ice-blue accent
+- compact spacing
+- clear typography hierarchy
+- actions shown on hover/context menu instead of permanently
+- minimal decoration
+
+Important rule:
+If a state is already clear through position/background/text, do not also add border + glow + icon + badge + accent line.
+
+Use approximately:
+background: #080B0F
+panel: #0C1015
+surface: #10151B
+border: rgba(145,170,190,0.08-0.12)
+strong border: rgba(145,170,190,0.16-0.20)
+
+Radii:
+- main panels: 8-10px
+- controls: 5-6px
+- small controls: 3-4px
+- list rows: 2-4px
+
+SIDEBAR
+- keep current structure
+- simplify active category state
+- use subtle background + small left accent line
+- remove unnecessary active border/glow
+- make inactive items neutral gray
+- simplify profile/account block
+- avoid SaaS-style subscription card look
+- remove or de-emphasize the LIFETIME pill
+
+MODULE LIST
+- make rows flatter and cleaner
+- primary content should be module name + toggle
+- hide secondary actions until hover or context menu
+- do not permanently show unnecessary icon buttons
+- hotkey indicator only when a keybind exists
+- selected row: subtle background + small left accent only
+
+ICONS
+- reduce icon count significantly
+- do not place icons everywhere just for decoration
+- avoid icon-inside-rounded-square patterns unless necessary
+
+TOGGLES
+- smaller and thinner
+- less rounded
+- no glow
+- compact desktop/game-client style
+- ON = accent track
+- OFF = dark neutral track
+
+RIGHT SETTINGS PANEL
+- remove unnecessary cards and section headers
+- setting rows should mostly be simple:
+  label on left, control on right
+- use spacing instead of borders to group content
+- reduce repeated separators
+
+TYPOGRAPHY
+Use clear hierarchy:
+- panel title: 15-16px semibold
+- module name: 14px medium
+- setting label: 13-14px regular/medium
+- secondary: 12px regular
+- section label: 10-11px semibold
+Do not make everything bold.
+
+COLOR SYSTEM
+- mostly neutral dark grays
+- cyan only for active/enabled/focus states
+- no purple gradients
+- no neon
+- no glassmorphism
+- no excessive glow
+
+COLOR PICKER
+Make it compact and native to FLUX.
+Preferred structure:
+
+Color ESP                          ×
+
+[ SV field ]
+
+[ hue slider ]
+
+Opacity                        100%
+[ opacity slider ]
+
+[color swatch]  #75CDFF        copy
+
+Remove:
+- duplicate clipboard buttons
+- excessive borders
+- unnecessary checkerboard areas
+- generic library styling
+
+CONTEXT MENU
+Make it compact and text-first.
+
+Example:
+
+Hitbox Customizer
+
+Pin
+Description
+
+Copy settings
+Paste settings
+
+Reset settings
+
+Use minimal separators.
+Only keep icons where they add real value.
+
+MODULE DESCRIPTION / TOOLTIP
+Simplify it:
+
+Hitbox Customizer                 ×
+
+Displays customizable colored
+entity hitboxes.
+
+One background.
+One border.
+No "DESCRIPTION" badge.
+No unnecessary decorative line.
+
+SPACING
+Avoid uniform spacing everywhere.
+
+Use roughly:
+- inside controls: 4-6px
+- between related rows: 6-10px
+- between groups: 16px
+- between major sections: 24px
+
+ANIMATIONS
+Keep them subtle and functional:
+- hover: 100-140ms
+- toggle: 120-160ms
+- popup: 120-160ms
+- small opacity/translate transitions only
+
+Do NOT add:
+- bounce
+- springs everywhere
+- scaling effects
+- glow animations
+- animated gradients
+- oversized shadows
+
+IMPLEMENTATION RULES
+- modify existing components, do not create a parallel UI
+- preserve all existing functionality
+- reuse shared components/styles
+- centralize theme/design tokens if possible
+- do not hardcode the same colors repeatedly
+- do not make unnecessary architectural changes
+
+VERY IMPORTANT:
+Do not try to make the UI "more premium" by adding more visual effects.
+Improve it mainly by removing unnecessary visual noise and improving hierarchy.
+
+Work only on these areas first:
+1. design tokens / shared UI primitives
+2. sidebar
+3. module list
+
+Do NOT modify the right settings panel, color picker, context menu, or tooltip yet.
+
+After editing:
+- run the available build/tests
+- fix any errors
+- briefly summarize changed files and what was improved

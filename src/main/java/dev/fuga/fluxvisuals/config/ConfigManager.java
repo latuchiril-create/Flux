@@ -306,6 +306,7 @@ public final class ConfigManager {
             targetEsp.setCrystalCount(integer(properties, "target_esp.crystal_count", targetEsp.getCrystalCount()));
             targetEsp.setCrystalSpeed(number(properties, "target_esp.crystal_speed", targetEsp.getCrystalSpeed()));
             targetEsp.setCrystalRadius(number(properties, "target_esp.crystal_radius", targetEsp.getCrystalRadius()));
+            targetEsp.setCrystalShader(targetEspCrystalShader(properties.getProperty("target_esp.crystal_shader"), targetEsp.getCrystalShader()));
             targetEsp.setRedOnHit(bool(properties, "target_esp.red_on_hit", targetEsp.isRedOnHit()));
             targetEsp.setColor(
                     number(properties, "target_esp.hue", targetEsp.getHue()),
@@ -426,6 +427,7 @@ public final class ConfigManager {
             aimBot.setAimYaw(bool(properties, "aim_bot.aim_yaw", aimBot.isAimYaw()));
             aimBot.setAimPitch(bool(properties, "aim_bot.aim_pitch", aimBot.isAimPitch()));
             aimBot.setCheckWalls(bool(properties, "aim_bot.check_walls", aimBot.isCheckWalls()));
+            aimBot.setIncludeInvisible(bool(properties, "aim_bot.include_invisible", aimBot.isIncludeInvisible()));
             aimBot.setOnlyOnAttack(bool(properties, "aim_bot.only_on_attack", aimBot.isOnlyOnAttack()));
             aimBot.setRequireAimKey(bool(properties, "aim_bot.require_key", aimBot.isRequireAimKey()));
             aimBot.setAimKey(integer(properties, "aim_bot.aim_key", aimBot.getAimKey()));
@@ -710,6 +712,7 @@ public final class ConfigManager {
         properties.setProperty("target_esp.crystal_count", Integer.toString(targetEsp.getCrystalCount()));
         properties.setProperty("target_esp.crystal_speed", number(targetEsp.getCrystalSpeed()));
         properties.setProperty("target_esp.crystal_radius", number(targetEsp.getCrystalRadius()));
+        properties.setProperty("target_esp.crystal_shader", targetEsp.getCrystalShader().name());
         properties.setProperty("target_esp.red_on_hit", Boolean.toString(targetEsp.isRedOnHit()));
         properties.setProperty("target_esp.hue", number(targetEsp.getHue()));
         properties.setProperty("target_esp.saturation", number(targetEsp.getSaturation()));
@@ -810,6 +813,7 @@ public final class ConfigManager {
         properties.setProperty("aim_bot.aim_yaw", Boolean.toString(aimBotSave.isAimYaw()));
         properties.setProperty("aim_bot.aim_pitch", Boolean.toString(aimBotSave.isAimPitch()));
         properties.setProperty("aim_bot.check_walls", Boolean.toString(aimBotSave.isCheckWalls()));
+        properties.setProperty("aim_bot.include_invisible", Boolean.toString(aimBotSave.isIncludeInvisible()));
         properties.setProperty("aim_bot.only_on_attack", Boolean.toString(aimBotSave.isOnlyOnAttack()));
         properties.setProperty("aim_bot.require_key", Boolean.toString(aimBotSave.isRequireAimKey()));
         properties.setProperty("aim_bot.aim_key", Integer.toString(aimBotSave.getAimKey()));
@@ -1183,6 +1187,17 @@ public final class ConfigManager {
 
         try {
             return TargetEsp.TargetFilter.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            return fallback;
+        }
+    }
+
+    private static TargetEsp.CrystalShader targetEspCrystalShader(String value, TargetEsp.CrystalShader fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return TargetEsp.CrystalShader.valueOf(value);
         } catch (IllegalArgumentException exception) {
             return fallback;
         }

@@ -9,6 +9,10 @@ public final class Fonts {
     public static final MsdfFont SEMIBOLD = new MsdfFont("semibold");
     public static final MsdfFont BOLD = new MsdfFont("bold");
     public static final MsdfFont ROUND_BOLD = new MsdfFont("roundbold");
+    /** Vector icon atlases imported from Velka with their original MSDF offsets. */
+    public static final MsdfFont VELKA_ICONS = new MsdfFont("velka_icons");
+    public static final MsdfFont VELKA_CONFIG_ICONS = new MsdfFont("config_icons");
+    public static final MsdfFont VELKA_BOT_ICONS = new MsdfFont("bot_icons");
 
     private Fonts() {
     }
@@ -19,5 +23,8 @@ public final class Fonts {
         SEMIBOLD.init();
         BOLD.init();
         ROUND_BOLD.init();
+        VELKA_ICONS.init();
+        VELKA_CONFIG_ICONS.init();
+        VELKA_BOT_ICONS.init();
     }
 }

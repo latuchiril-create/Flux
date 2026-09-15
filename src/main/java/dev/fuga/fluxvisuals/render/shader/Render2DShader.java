@@ -145,11 +145,14 @@ public final class Render2DShader {
                 float maxRad = min(halfSize.x, halfSize.y);
                 vec4 clampedRadius = clamp(radius, vec4(0.0), vec4(maxRad));
                 float dist = roundedBoxSDF(p, halfSize + shadowSpread, clampedRadius);
-                float sigma = max(0.5, shadowSize * 0.45);
+                float sigma = max(0.5, shadowSize * 0.38);
                 float factor = max(0.0, dist) / sigma;
-                float shadowAlpha = exp(-0.5 * factor * factor);
+                float t = clamp(dist / max(0.001, shadowSize), 0.0, 1.0);
+                float fade = 1.0 - t;
+                fade = fade * fade * (3.0 - 2.0 * fade);
+                float shadowAlpha = exp(-0.5 * factor * factor) * fade;
                 if (dist <= 0.0) shadowAlpha = 1.0;
-                if (shadowAlpha <= 0.002) discard;
+                if (shadowAlpha <= 0.001) discard;
                 fragColor = shadowColor * vec4(1.0, 1.0, 1.0, shadowAlpha);
             }
             """;

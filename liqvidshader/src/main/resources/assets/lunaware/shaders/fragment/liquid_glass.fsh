@@ -85,11 +85,17 @@ void main() {
         blurred = mix(blurred, edgeBlur * 0.25, innerEdge * 0.70);
     }
 
-    float topShine = clamp(1.0 - (localPoint.y / max(halfSize.y, 1.0) + 1.0) * 0.5, 0.0, 1.0);
-    vec3 color = mix(blurred, tintColor.rgb, tintColor.a);
-    vec3 edgeColor = mix(vec3(1.0), tintColor.rgb, 0.28);
-    color += edgeColor * edge * topShine * shine * 0.15;
-    color -= vec3(0.04, 0.06, 0.10) * edge * (1.0 - topShine) * shine * 0.06;
+    // Smooth glass tint blending with refracted background
+    vec3 baseGlass = blurred;
+    vec3 color = mix(baseGlass, tintColor.rgb, tintColor.a);
+
+    // Soft organic specular glint without white border line
+    if (shine > 0.001) {
+        vec2 lightSource = normalize(vec2(-0.45, -0.85));
+        float rimDot = max(0.0, dot(radial, lightSource));
+        float specular = pow(rimDot, 12.0) * edge * shine * 0.20;
+        color += tintColor.rgb * specular;
+    }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), mask * opacity);
 }

@@ -14,6 +14,7 @@ import dev.fuga.fluxvisuals.modules.ModuleCategory;
 import dev.fuga.fluxvisuals.modules.ModuleManager;
 import dev.fuga.fluxvisuals.modules.visual.*;
 import dev.fuga.fluxvisuals.render.Render2D;
+import dev.fuga.fluxvisuals.render.font.MsdfIcons;
 import dev.fuga.fluxvisuals.render.liqvid.BlurRenderer;
 import java.awt.Color;
 import java.awt.MouseInfo;
@@ -34,6 +35,57 @@ import java.io.IOException;
 import java.io.InputStream;
 
 public final class ModernClickGuiRenderer {
+    public static final java.util.Map<String, Boolean> MODULE_BIND_MODES = new java.util.concurrent.ConcurrentHashMap<>();
+    // Modern GUI design tokens
+    private static final int UI_BACKGROUND = 0xFF080B0F;
+    private static final int UI_PANEL = 0xFF10161D;
+    private static final int UI_PANEL_ALT = 0xFF121922;
+    private static final int UI_SURFACE = 0xFF151D25;
+    private static final int UI_SURFACE_HOVER = 0xFF1A2530;
+    private static final int UI_SURFACE_SELECTED = 0xFF1B2A39;
+    private static final int UI_BORDER = 0xFF2D3A47;
+    private static final int UI_BORDER_SOFT = 0xFF24303B;
+    private static final int UI_TEXT = 0xFFF1F5F7;
+    private static final int UI_TEXT_SECONDARY = 0xFFB6C1C9;
+    private static final int UI_TEXT_MUTED = 0xFF84929C;
+    private static final int UI_ACCENT = 0xFF6DB3C7;
+    private static final int UI_ACCENT_STRONG = 0xFF93D1E2;
+
+    public static int getAccentColor() {
+        if (FluxVisualsClient.MODULE_MANAGER != null) {
+            Menu menu = FluxVisualsClient.MODULE_MANAGER.getMenu();
+            if (menu != null) {
+                return menu.getLiveColor(0.0F);
+            }
+        }
+        return UI_ACCENT;
+    }
+
+    public static int getAccentColor(float offset) {
+        if (FluxVisualsClient.MODULE_MANAGER != null) {
+            Menu menu = FluxVisualsClient.MODULE_MANAGER.getMenu();
+            if (menu != null) {
+                return menu.getLiveColor(offset);
+            }
+        }
+        return UI_ACCENT;
+    }
+
+    public static int getAccentStrongColor() {
+        if (FluxVisualsClient.MODULE_MANAGER != null) {
+            Menu menu = FluxVisualsClient.MODULE_MANAGER.getMenu();
+            if (menu != null) {
+                return menu.getLiveAccentStrong(0.0F);
+            }
+        }
+        return UI_ACCENT_STRONG;
+    }
+
+    private static final int UI_DANGER = 0xFFD17979;
+    private static final float PANEL_RADIUS = 9.0F;
+    private static final float CONTROL_RADIUS = 4.0F;
+    private static final float ROW_RADIUS = 3.0F;
+
     private static final Map<Identifier, Identifier> WHITE_ICONS = new HashMap<>();
     private static final Identifier ICON_COMBAT = Identifier.of("fluxvisuals", "icons/combat.png");
     private static final Identifier ICON_MOVEMENT = Identifier.of("fluxvisuals", "icons/movement.png");
@@ -51,7 +103,6 @@ public final class ModernClickGuiRenderer {
     private static final Identifier ICON_SORT = Identifier.of("fluxvisuals", "icons/sort.png");
     private static final Identifier ICON_INFO = Identifier.of("fluxvisuals", "icons/info.png");
     private static final Identifier ICON_COPY = Identifier.of("fluxvisuals", "icons/copy.png");
-    private static final Identifier ICON_PASTE = Identifier.of("fluxvisuals", "icons/paste.png");
     private static final Identifier ICON_PIN = Identifier.of("fluxvisuals", "icons/pin.png");
     private static final Identifier ICON_NO_SETTINGS = Identifier.of("fluxvisuals", "icons/no_settings.png");
 
@@ -132,6 +183,9 @@ public final class ModernClickGuiRenderer {
 
     private static Category savedCategory = Category.COMBAT;
     private static String savedModuleName = null;
+    private static String savedSearch = "";
+    private static float savedScrollLeft;
+    private static float savedScrollRight;
     private static SortMode sortMode = SortMode.DEFAULT;
 
     private static float catIndicatorY = -1.0F;
@@ -209,8 +263,8 @@ public final class ModernClickGuiRenderer {
     private String hexBuffer = "";
     private float colorPickerAnim = 0.0F;
     private boolean colorPickerClosing = false;
-    private String colorFeedback = null;
-    private long colorFeedbackTime = 0L;
+    public static String colorFeedback = null;
+    public static long colorFeedbackTime = 0L;
     private boolean pipetteActive = false;
 
     private static Robot AWT_ROBOT = null;
@@ -268,12 +322,16 @@ public final class ModernClickGuiRenderer {
         }
 
         public GuiBounds(int screenWidth, int screenHeight, float scale, float settingsProgress) {
-            this.scale = scale;
+            // Keep the expanded settings layout inside the viewport without introducing
+            // oversized empty margins around the compact menu.
+            float maxWidthScale = (screenWidth - 64.0F) / 904.0F;
+            float maxHeightScale = (screenHeight - 56.0F) / 470.0F;
+            this.scale = Math.max(0.5F, Math.min(scale, Math.min(maxWidthScale, maxHeightScale)));
             this.settingsProgress = settingsProgress;
-            this.sidebarW = 184.0F * scale;
-            this.boxW = 295.0F * scale;
-            this.boxH = 460.0F * scale;
-            float gap = PANEL_GAP * scale;
+            this.sidebarW = 210.0F * this.scale;
+            this.boxW = 335.0F * this.scale;
+            this.boxH = 470.0F * this.scale;
+            float gap = PANEL_GAP * this.scale;
 
             float twoPanelW = sidebarW + gap + boxW;
             float threePanelW = twoPanelW + gap + boxW;
@@ -290,7 +348,7 @@ public final class ModernClickGuiRenderer {
 
             this.contentX = box1X;
             this.contentW = boxW * 2.0F + gap;
-            this.rowW = boxW - 32.0F * scale;
+            this.rowW = boxW - 32.0F * this.scale;
         }
     }
 
@@ -468,30 +526,12 @@ public final class ModernClickGuiRenderer {
     }
 
     public static void handleBinds(MinecraftClient client) {
-        if (client == null || client.player == null || client.getWindow() == null
-                || (client.currentScreen != null && !isClientGui(client))) {
+        if (client == null || client.player == null || client.getWindow() == null || client.currentScreen != null) {
             PRESSED_KEYS.clear();
             return;
         }
 
         long handle = client.getWindow().getHandle();
-
-        // Check Menu open keybind
-        Menu menuMod = FluxVisualsClient.MODULE_MANAGER.getMenu();
-        if (menuMod != null && menuMod.getKeyBind() != 0 && menuMod.getKeyBind() != GLFW.GLFW_KEY_UNKNOWN) {
-            int menuKey = menuMod.getKeyBind();
-            boolean isDown = (menuKey >= 1000 && menuKey <= 1010)
-                    ? GLFW.glfwGetMouseButton(handle, menuKey - 1000) == GLFW.GLFW_PRESS
-                    : GLFW.glfwGetKey(handle, menuKey) == GLFW.GLFW_PRESS;
-
-            if (isDown && !PRESSED_KEYS.contains(menuKey)) {
-                PRESSED_KEYS.add(menuKey);
-                FluxVisualsClient.openModernGui(client);
-                return;
-            } else if (!isDown) {
-                PRESSED_KEYS.remove(menuKey);
-            }
-        }
 
         for (Map.Entry<String, Integer> entry : MODULE_BINDS.entrySet()) {
             int key = entry.getValue();
@@ -509,7 +549,9 @@ public final class ModernClickGuiRenderer {
                 PRESSED_KEYS.add(key);
 
                 // Without a license functions stay off and the player is told why (once per cooldown).
-                if (!("Menu".equalsIgnoreCase(bindName) || "ClickGUI".equalsIgnoreCase(bindName) || "action_freelook".equalsIgnoreCase(bindName)) && !LicenseManager.isLicensed) {
+                if (!("Menu".equalsIgnoreCase(bindName) || "ClickGUI".equalsIgnoreCase(bindName)
+                        || "ModernGui2".equalsIgnoreCase(bindName)
+                        || "action_freelook".equalsIgnoreCase(bindName)) && !LicenseManager.isLicensed) {
                     LicenseManager.canOpenGui(client);
                 } else if ("action_autoswap".equalsIgnoreCase(bindName)) {
                     FluxVisualsClient.MODULE_MANAGER.getAutoSwap().triggerSwap();
@@ -519,25 +561,44 @@ public final class ModernClickGuiRenderer {
                     FluxVisualsClient.MODULE_MANAGER.getZoom().toggle();
                 } else if ("Menu".equalsIgnoreCase(bindName) || "ClickGUI".equalsIgnoreCase(bindName)) {
                     FluxVisualsClient.openModernGui(client);
+                } else if ("ModernGui2".equalsIgnoreCase(bindName)) {
+                    FluxVisualsClient.openModernGui2(client);
                 } else if ("action_freelook".equalsIgnoreCase(bindName)) {
                     // FreeLook handles hold/toggle internally in onTick
                 } else {
                     for (Module mod : FluxVisualsClient.MODULE_MANAGER.getModules()) {
                         if (mod.getName().equalsIgnoreCase(bindName)) {
-                            sessionToggleTarget(mod).toggle();
+                            boolean isHold = MODULE_BIND_MODES.getOrDefault(mod.getName(), false);
+                            if (isHold) {
+                                sessionToggleTarget(mod).setEnabled(true);
+                            } else {
+                                sessionToggleTarget(mod).toggle();
+                            }
                             break;
                         }
                     }
                 }
             } else if (!isDown) {
-                PRESSED_KEYS.remove(key);
+                if (PRESSED_KEYS.remove(key)) {
+                    for (Map.Entry<String, Integer> e : MODULE_BINDS.entrySet()) {
+                        if (e.getValue() == key && MODULE_BIND_MODES.getOrDefault(e.getKey(), false)) {
+                            for (Module mod : FluxVisualsClient.MODULE_MANAGER.getModules()) {
+                                if (mod.getName().equalsIgnoreCase(e.getKey())) {
+                                    sessionToggleTarget(mod).setEnabled(false);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     private static boolean isClientGui(MinecraftClient client) {
         return client != null && (client.currentScreen instanceof ModernClickGuiScreen
-                || client.currentScreen instanceof ClickGuiScreen);
+                || client.currentScreen instanceof ClickGuiScreen
+                || client.currentScreen instanceof ModernGui2Screen);
     }
 
     /**
@@ -566,12 +627,14 @@ public final class ModernClickGuiRenderer {
     public void open() {
         openProgress = 0.0F;
         lastTime = System.currentTimeMillis();
-        search = "";
+        search = savedSearch;
         searchFocused = false;
         moduleIndicatorY = -1.0F;
         moduleIndicatorAlpha = 0.0F;
-        settingsOpen = false;
-        settingsAnim = 0.0F;
+        // Keep the selected settings panel open across screen instances.
+        settingsAnim = settingsOpen ? 1.0F : 0.0F;
+        scrollLeft = savedScrollLeft;
+        scrollRight = savedScrollRight;
         listeningModuleBind = null;
         listeningSettingBind = null;
         listeningMacroIndex = -1;
@@ -580,6 +643,7 @@ public final class ModernClickGuiRenderer {
         activeNameBindTextIndex = -1;
         openDropdown = null;
         openMultiDropdown = null;
+        sortDropdownOpen = false;
         sortDropdownAnim = 0.0F;
         activeContextMenuModule = null;
         contextMenuAnim = 0.0F;
@@ -593,6 +657,9 @@ public final class ModernClickGuiRenderer {
         activeStringSetting = null;
         activeStringDraft = "";
         activeSlider = null;
+        draggingSV = false;
+        draggingHue = false;
+        draggingAlpha = false;
         activeSliderInput = null;
         sliderInputBuffer = "";
         hexFocused = false;
@@ -615,21 +682,45 @@ public final class ModernClickGuiRenderer {
         }
     }
 
+    public void removed() {
+        savedCategory = selectedCategory;
+        savedModuleName = selectedModule == null ? null : selectedModule.getName();
+        savedSearch = search;
+        savedScrollLeft = scrollLeft;
+        savedScrollRight = scrollRight;
+        mouseReleased();
+    }
     private void initSettings() {
         moduleSettings.clear();
         for (Module mod : moduleManager.getModules()) {
             List<Setting<?>> list = new ArrayList<>();
-            populateModuleSettings(mod, list);
+            populateModuleSettings(moduleManager, mod, list);
             moduleSettings.put(mod, list);
         }
     }
 
-    private void populateModuleSettings(Module module, List<Setting<?>> list) {
+    public static void populateModuleSettings(ModuleManager moduleManager, Module module, List<Setting<?>> list) {
         String name = module.getName();
         if ("Menu".equalsIgnoreCase(name)) {
             Menu menu = moduleManager.getMenu();
             list.add(new ModeSetting("Масштаб GUI", Menu.SCALE_MODES, menu::getScaleMode, menu::setScaleMode));
             list.add(new ModeSetting("Язык / Language", Menu.LANGUAGE_MODES, menu::getLanguage, menu::setLanguage));
+            list.add(new ModeSetting("Заготовка темы", Menu.THEME_PRESETS, menu::getThemePreset, menu::setThemePreset));
+            list.add(new ModeSetting("Количество цветов", Menu.COLOR_COUNT_OPTIONS, menu::getColorCountMode, menu::setColorCountMode)
+                    .visible(() -> "Кастом".equalsIgnoreCase(menu.getThemePreset())));
+            list.add(new SliderSetting("Скорость перелива", 0.2F, 4.0F, 0.1F, "x", menu::getFlowSpeed, menu::setFlowSpeed)
+                    .visible(() -> "Кастом".equalsIgnoreCase(menu.getThemePreset()) && menu.getColorCount() > 1));
+            list.add(new ColorSetting(name + ":Основной цвет", "Основной цвет", menu::getColor1, menu::setColor1)
+                    .visible(() -> "Кастом".equalsIgnoreCase(menu.getThemePreset())));
+            list.add(new ColorSetting(name + ":Второй цвет", "Второй цвет", menu::getColor2, menu::setColor2)
+                    .visible(() -> "Кастом".equalsIgnoreCase(menu.getThemePreset()) && menu.getColorCount() >= 2));
+            list.add(new ColorSetting(name + ":Третий цвет", "Третий цвет", menu::getColor3, menu::setColor3)
+                    .visible(() -> "Кастом".equalsIgnoreCase(menu.getThemePreset()) && menu.getColorCount() >= 3));
+            list.add(new ActionSetting("Синхронизация", "💧 Синхронизировать все с темой", () -> {
+                ColorSetting.syncAllToTheme();
+                colorFeedback = "sync_all_success";
+                colorFeedbackTime = System.currentTimeMillis();
+            }));
         } else if ("Telegram".equalsIgnoreCase(name) || "TG".equalsIgnoreCase(name)) {
             Telegram tg = moduleManager.getTelegram();
             list.add(new StringSetting("Bot Token", "123456:...", tg::getBotToken, tg::setBotToken));
@@ -652,24 +743,16 @@ public final class ModernClickGuiRenderer {
             list.add(new SliderSetting("Ожидание после продажи", 1.0F, 120.0F, 1.0F, " с", () -> (float) ic.getSellWaitSeconds(), v -> ic.setSellWaitSeconds(Math.round(v))));
         } else if ("CaptchaSolver".equalsIgnoreCase(name)) {
             dev.fuga.fluxvisuals.captcha.CaptchaSolver cs = moduleManager.getCaptchaSolver();
-            list.add(new StringSetting("URL сервера", "http://127.0.0.1:5000/solve", cs::getServerUrl, cs::setServerUrl));
+            list.add(new BooleanSetting("Авто-отправка в чат", cs::isAutoSend, cs::setAutoSend));
+            list.add(new SliderSetting("Радиус поиска", 5.0F, 100.0F, 1.0F, " б", cs::getSearchRadius, cs::setSearchRadius));
+            list.add(new SliderSetting("Время активности", 5.0F, 60.0F, 1.0F, " с", cs::getActiveTimeSec, cs::setActiveTimeSec));
+            list.add(new SliderSetting("Точность (угол)", 0.50F, 0.99F, 0.01F, "", cs::getAccuracy, cs::setAccuracy));
             list.add(new StringSetting("Префикс ответа", "", cs::getAnswerPrefix, cs::setAnswerPrefix));
-            list.add(new ModeSetting("Стена капчи", List.of("Авто", "По прицелу", "Ближайшая", "Самая чистая"),
-                    () -> {
-                        String mode = cs.getWallMode().trim().toLowerCase(java.util.Locale.ROOT);
-                        if (mode.startsWith("nearest") || mode.startsWith("ближ")) return "Ближайшая";
-                        if (mode.startsWith("sparse") || mode.startsWith("чист") || mode.startsWith("редк")) return "Самая чистая";
-                        if (mode.startsWith("cross") || mode.startsWith("прицел")) return "По прицелу";
-                        return "Авто";
-                    },
-                    v -> cs.setWallMode("Ближайшая".equalsIgnoreCase(v) ? "nearest"
-                            : "Самая чистая".equalsIgnoreCase(v) ? "sparsest"
-                            : "По прицелу".equalsIgnoreCase(v) ? "crosshair" : "auto")));
-            list.add(new BooleanSetting("Дебаг: не удалять скрины", cs::isDebugKeepShots, cs::setDebugKeepShots));
+            list.add(new BooleanSetting("Дебаг: сохранять картинки", cs::isDebug, cs::setDebug));
         } else if ("Hit Color".equalsIgnoreCase(name) || "HitColor".equalsIgnoreCase(name)) {
             HitColor hitColor = moduleManager.getHitColor();
             list.add(new BooleanSetting("Броня в цвет удара", hitColor::isArmorTintEnabled, hitColor::setArmorTintEnabled));
-            list.add(new ColorSetting("Цвет удара", hitColor::getArgbColor, col -> {
+            list.add(new ColorSetting(name + ":Цвет удара", "Цвет удара", hitColor::getArgbColor, col -> {
                 float[] hsb = Color.RGBtoHSB((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF, null);
                 hitColor.setColor(hsb[0], hsb[1], hsb[2]);
                 hitColor.setAlpha(((col >> 24) & 0xFF) / 255.0F);
@@ -680,7 +763,7 @@ public final class ModernClickGuiRenderer {
             list.add(new ModeSetting("Режим", List.of("Обычная", "Шейдер"),
                     () -> hat.getFillMode() == ChinaHat.FillMode.SHADER ? "Шейдер" : "Обычная",
                     v -> hat.setFillMode("Шейдер".equalsIgnoreCase(v) ? ChinaHat.FillMode.SHADER : ChinaHat.FillMode.FILL)));
-            list.add(new ColorSetting("Цвет шляпы", hat::getArgbColor, hat::setArgbColor).visible(() -> hat.getFillMode() == ChinaHat.FillMode.FILL));
+            list.add(new ColorSetting(name + ":Цвет шляпы", "Цвет шляпы", hat::getArgbColor, hat::setArgbColor).visible(() -> hat.getFillMode() == ChinaHat.FillMode.FILL));
         } else if ("Wings".equalsIgnoreCase(name)) {
             Wings wings = moduleManager.getWings();
             list.add(new MultiModeSetting("Цели", List.of("Self", "Players", "Bots"), wings::getTargets, wings::setTargets));
@@ -691,7 +774,7 @@ public final class ModernClickGuiRenderer {
             list.add(new BooleanSetting("Взмахи", wings::isFlapping, wings::setFlapping));
             list.add(new SliderSetting("Размер", 0.3F, 3.0F, 0.1F, "x", wings::getScale, wings::setScale));
             list.add(new SliderSetting("Скорость взмахов", 0.5F, 8.0F, 0.2F, "x", wings::getFlapSpeed, wings::setFlapSpeed).visible(wings::isFlapping));
-            list.add(new ColorSetting("Цвет крыльев", wings::getArgbColor, wings::setArgbColor));
+            list.add(new ColorSetting(name + ":Цвет крыльев", "Цвет крыльев", wings::getArgbColor, wings::setArgbColor));
         } else if ("WorldCustomizer".equalsIgnoreCase(name) || "World Customizer".equalsIgnoreCase(name)) {
             WorldCustomizer wc = moduleManager.getWorldCustomizer();
             list.add(new ModeSetting("Время суток", List.of("День", "Ночь", "Полночь", "Закат", "Кастом"),
@@ -716,7 +799,7 @@ public final class ModernClickGuiRenderer {
             list.add(new SliderSetting("Кастомное время", 0.0F, 24000.0F, 500.0F, "", () -> (float) wc.getCustomTime(), v -> wc.setCustomTime(Math.round(v))).visible(() -> wc.getTimePreset() == WorldCustomizer.TimePreset.CUSTOM));
             list.add(new BooleanSetting("Кастомный туман", wc::isCustomFogEnabled, wc::setCustomFogEnabled));
             list.add(new SliderSetting("Дистанция тумана", 16.0F, 1024.0F, 16.0F, "m", wc::getFogDistance, wc::setFogDistance).visible(wc::isCustomFogEnabled));
-            list.add(new ColorSetting("Цвет тумана", wc::getFogArgbColor, wc::setFogArgbColor).visible(wc::isCustomFogEnabled));
+            list.add(new ColorSetting(name + ":Цвет тумана", "Цвет тумана", wc::getFogArgbColor, wc::setFogArgbColor).visible(wc::isCustomFogEnabled));
         } else if ("BlockOverlay".equalsIgnoreCase(name)) {
             BlockOverlay bo = moduleManager.getBlockOverlay();
             list.add(new BooleanSetting("Заливка бокса", bo::isFillEnabled, bo::setFillEnabled));
@@ -737,8 +820,8 @@ public final class ModernClickGuiRenderer {
             list.add(new BooleanSetting("Сквозь стены", bo::isThroughWalls, bo::setThroughWalls));
             list.add(new BooleanSetting("Плавный переход", bo::isSmoothSwitch, bo::setSmoothSwitch));
             list.add(new SliderSetting("Толщина линий", 0.5F, 4.0F, 0.1F, "px", bo::getLineThickness, bo::setLineThickness));
-            list.add(new ColorSetting("Цвет обводки", bo::getOutlineArgbColor, bo::setOutlineArgbColor));
-            list.add(new ColorSetting("Цвет заливки", bo::getFillArgbColor, bo::setFillArgbColor).visible(bo::isFillEnabled));
+            list.add(new ColorSetting(name + ":Цвет обводки", "Цвет обводки", bo::getOutlineArgbColor, bo::setOutlineArgbColor));
+            list.add(new ColorSetting(name + ":Цвет заливки", "Цвет заливки", bo::getFillArgbColor, bo::setFillArgbColor).visible(bo::isFillEnabled));
         } else if ("TargetESP".equalsIgnoreCase(name) || "Target ESP".equalsIgnoreCase(name)) {
             TargetEsp te = moduleManager.getTargetEsp();
             list.add(new ModeSetting("Стиль", Arrays.stream(TargetEsp.Style.values()).map(TargetEsp.Style::label).toList(),
@@ -765,7 +848,7 @@ public final class ModernClickGuiRenderer {
                         }
                     }));
             list.add(new BooleanSetting("Красный при ударе", te::isRedOnHit, te::setRedOnHit));
-            list.add(new ColorSetting("Цвет ESP", te::getArgbColor, te::setArgbColor));
+            list.add(new ColorSetting(name + ":Цвет ESP", "Цвет ESP", te::getArgbColor, te::setArgbColor));
 
             // Standard styles size
             list.add(new SliderSetting("Размер прицела", 0.45F, 2.0F, 0.05F, "x", te::getNormalSize, te::setNormalSize)
@@ -810,7 +893,7 @@ public final class ModernClickGuiRenderer {
             list.add(new BooleanSetting("Обводка", cross::isOutline, cross::setOutline));
             list.add(new BooleanSetting("Красный на цели", cross::isRedOnTarget, cross::setRedOnTarget));
             list.add(new BooleanSetting("В третьем лице", cross::isShowInThirdPerson, cross::setShowInThirdPerson));
-            list.add(new ColorSetting("Цвет прицела", cross::getColorArgb, cross::setColorArgb));
+            list.add(new ColorSetting(name + ":Цвет прицела", "Цвет прицела", cross::getColorArgb, cross::setColorArgb));
         } else if ("Zoom".equalsIgnoreCase(name)) {
             Zoom zoom = moduleManager.getZoom();
             list.add(new KeybindSetting("Бинд зума", zoom::getKeyBind, zoom::setKeyBind));
@@ -882,10 +965,28 @@ public final class ModernClickGuiRenderer {
                         };
                         part.setPreviewTexture(type);
                     }));
+            List<String> spawnModeLabels = Arrays.stream(Particles.SpawnMode.values())
+                    .map(Particles.SpawnMode::label)
+                    .toList();
+            list.add(new MultiModeSetting("Условия появления", spawnModeLabels,
+                    () -> {
+                        Set<String> selected = new LinkedHashSet<>();
+                        for (Particles.SpawnMode mode : Particles.SpawnMode.values()) {
+                            if (part.isModeEnabled(mode)) {
+                                selected.add(mode.label());
+                            }
+                        }
+                        return selected;
+                    },
+                    selected -> {
+                        for (Particles.SpawnMode mode : Particles.SpawnMode.values()) {
+                            part.setModeEnabled(mode, selected != null && selected.contains(mode.label()));
+                        }
+                    }));
             list.add(new SliderSetting("Количество", 1.0F, 64.0F, 1.0F, "", () -> (float) part.getAmount(), v -> part.setAmount(Math.round(v))));
             list.add(new SliderSetting("Размер", 0.05F, 0.5F, 0.01F, "", part::getSize, part::setSize));
             list.add(new SliderSetting("Время жизни", 0.5F, 5.0F, 0.1F, "s", part::getLifeSeconds, part::setLifeSeconds));
-            list.add(new ColorSetting("Цвет частиц", part::getArgbColor, part::setArgbColor));
+            list.add(new ColorSetting(name + ":Цвет частиц", "Цвет частиц", part::getArgbColor, part::setArgbColor));
         } else if ("JumpCircles".equalsIgnoreCase(name)) {
             JumpCircles jc = moduleManager.getJumpCircles();
             list.add(new ModeSetting("Режим", List.of("Круг", "Кольцо", "Flux", "Блоки"),
@@ -920,11 +1021,11 @@ public final class ModernClickGuiRenderer {
             list.add(new SliderSetting("Разброс", 0.0F, 1.0F, 0.01F, "", jc::getSpread, jc::setSpread).visible(jc::isParticlesEnabled));
             list.add(new SliderSetting("Время жизни", 0.5F, 3.0F, 0.1F, "s", jc::getLifeSeconds, jc::setLifeSeconds));
             list.add(new SliderSetting("Размер круга", 0.35F, 3.0F, 0.05F, "", jc::getSize, jc::setSize).visible(() -> jc.getMode() != JumpCircles.Mode.BLOCKS));
-            list.add(new ColorSetting("Цвет кругов", jc::getArgbColor, jc::setArgbColor));
+            list.add(new ColorSetting(name + ":Цвет кругов", "Цвет кругов", jc::getArgbColor, jc::setArgbColor));
         } else if ("Trails".equalsIgnoreCase(name)) {
             Trails trails = moduleManager.getTrails();
             list.add(new SliderSetting("Длина шлейфа", 5.0F, 50.0F, 1.0F, "pts", trails::getMaxLength, trails::setMaxLength));
-            list.add(new ColorSetting("Цвет шлейфа", trails::getArgbColor, trails::setArgbColor));
+            list.add(new ColorSetting(name + ":Цвет шлейфа", "Цвет шлейфа", trails::getArgbColor, trails::setArgbColor));
         } else if ("Removals".equalsIgnoreCase(name)) {
             Removals rem = moduleManager.getRemovals();
             list.add(new BooleanSetting("Огонь на экране", rem::isFireOverlay, rem::setFireOverlay));
@@ -951,6 +1052,12 @@ public final class ModernClickGuiRenderer {
         } else if ("AutoBuy".equalsIgnoreCase(name)) {
             AutoBuy ab = moduleManager.getAutoBuy();
             ItemResorter ir = moduleManager.getItemResorter();
+            list.add(new ActionSetting("Меню конфигурации", "⚙ Открыть меню", () -> {
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc != null) {
+                    mc.setScreen(new AutoBuyConfigScreen(mc.currentScreen));
+                }
+            }));
             list.add(new BooleanSetting("Свитч по анархиям", ab::isAnarchySwitchEnabled, ab::setAnarchySwitchEnabled));
             list.add(new BooleanSetting("Авто-перепродажа", ab::isAutoResellEnabled, ab::setAutoResellEnabled));
             list.add(new BooleanSetting("Анти-слив баланса", ab::isLowBalanceGuardEnabled, ab::setLowBalanceGuardEnabled));
@@ -991,8 +1098,8 @@ public final class ModernClickGuiRenderer {
             list.add(new BooleanSetting("Вектор взгляда", hc::isShowLookVector, hc::setShowLookVector));
             list.add(new BooleanSetting("Включая себя", hc::isIncludeSelf, hc::setIncludeSelf));
             list.add(new SliderSetting("Толщина линий", 0.5F, 5.0F, 0.1F, "px", hc::getLineThickness, hc::setLineThickness));
-            list.add(new ColorSetting("Цвет обводки", hc::getOutlineArgbColor, hc::setOutlineArgbColor));
-            list.add(new ColorSetting("Цвет заливки", hc::getFillArgbColor, hc::setFillArgbColor).visible(hc::isFillEnabled));
+            list.add(new ColorSetting(name + ":Цвет обводки", "Цвет обводки", hc::getOutlineArgbColor, hc::setOutlineArgbColor));
+            list.add(new ColorSetting(name + ":Цвет заливки", "Цвет заливки", hc::getFillArgbColor, hc::setFillArgbColor).visible(hc::isFillEnabled));
         } else if ("ItemRadius".equalsIgnoreCase(name)) {
             ItemRadius ir = moduleManager.getItemRadius();
             list.add(new MultiModeSetting("Предметы", List.of("Дезка", "Явка", "Огненый Заряд", "Божья Аура", "Трапка", "Пласт", "Снежок Заморозка"),
@@ -1043,8 +1150,8 @@ public final class ModernClickGuiRenderer {
         } else if ("AimBot".equalsIgnoreCase(name)) {
             dev.fuga.fluxvisuals.modules.combat.AimBot ab = moduleManager.getAimBot();
             list.add(new ModeSetting("Цели", List.of("Игроки", "Мобы", "Все"), ab::getTargetsName, ab::setTargetsName));
-            list.add(new SliderSetting("Скорость Yaw", 1.0F, 30.0F, 0.5F, "", ab::getYawSpeed, ab::setYawSpeed));
-            list.add(new SliderSetting("Скорость Pitch", 1.0F, 30.0F, 0.5F, "", ab::getPitchSpeed, ab::setPitchSpeed));
+            list.add(new SliderSetting("Скорость Yaw", 1.0F, 100.0F, 0.5F, "", ab::getYawSpeed, ab::setYawSpeed));
+            list.add(new SliderSetting("Скорость Pitch", 1.0F, 100.0F, 0.5F, "", ab::getPitchSpeed, ab::setPitchSpeed));
             list.add(new BooleanSetting("Наводка Yaw", ab::isAimYaw, ab::setAimYaw));
             list.add(new BooleanSetting("Наводка Pitch", ab::isAimPitch, ab::setAimPitch));
             list.add(new SliderSetting("Хуманайз", 0.0F, 100.0F, 1.0F, "%", ab::getHumanize, ab::setHumanize));
@@ -1052,6 +1159,7 @@ public final class ModernClickGuiRenderer {
             list.add(new SliderSetting("Дистанция", 2.0F, 10.0F, 0.1F, "m", ab::getDistance, ab::setDistance));
             list.add(new BooleanSetting("Держать цель", ab::isStickyTarget, ab::setStickyTarget));
             list.add(new BooleanSetting("Проверка стен", ab::isCheckWalls, ab::setCheckWalls));
+            list.add(new BooleanSetting("Включать невидимых", ab::isIncludeInvisible, ab::setIncludeInvisible));
             list.add(new BooleanSetting("Общая кнопка Aim+Trigger", ab::isComboEnabled, ab::setComboEnabled));
             list.add(new KeybindSetting("Кнопка связки", ab::getComboKey, ab::setComboKey).visible(ab::isComboEnabled));
         } else if ("TriggerBot".equalsIgnoreCase(name)) {
@@ -1210,6 +1318,7 @@ public final class ModernClickGuiRenderer {
     }
 
     public void render(DrawContext context, int screenWidth, int screenHeight, int mouseX, int mouseY, float delta) {
+        ColorSetting.updateAllSyncedColors();
         long now = System.currentTimeMillis();
         float dt = Math.min((now - lastTime) / 1000.0F, 0.1F);
         lastTime = now;
@@ -1226,15 +1335,22 @@ public final class ModernClickGuiRenderer {
         float settingsProgress = easeInOutCubic(settingsAnim);
 
         BlurRenderer.drawBlur(0.0F, 0.0F, screenWidth, screenHeight, 0.0F, alpha * 0.75F);
-        Render2D.drawRound(context, 0.0F, 0.0F, screenWidth, screenHeight, 0.0F, argb(120, 0, 0, 0, alpha));
+        // Keep the world visible through the blur, but give the menu a darker, calmer backdrop.
+        Render2D.drawRound(context, 0.0F, 0.0F, screenWidth, screenHeight, 0.0F, argb(175, 0, 0, 0, alpha));
 
         GuiBounds b = new GuiBounds(screenWidth, screenHeight, getGuiScale(), settingsProgress);
 
         // Panel 1: Sidebar (Разделы) - Standalone floating obsidian card
-        Render2D.drawShadow(context, b.x, b.y, b.sidebarW, b.h, 20.0F * b.scale, 16.0F * b.scale, argb(150, 0, 0, 0, alpha));
-        Render2D.drawRound(context, b.x, b.y, b.sidebarW, b.h, 10.0F * b.scale, argb(252, 11, 13, 18, alpha));
-        Render2D.drawRoundOutline(context, b.x, b.y, b.sidebarW, b.h, 10.0F * b.scale, 1.0F, argb(255, 26, 29, 39, alpha));
-        Render2D.drawLine(context, b.x + 10.0F * b.scale, b.y + 1.0F, b.x + b.sidebarW - 10.0F * b.scale, b.y + 1.0F, 1.0F, argb(20, 255, 255, 255, alpha));
+        // Keep a vanilla fill underneath the shader rounded card so a driver or resource-pack
+        // shader failure cannot turn the whole menu into a blank dark overlay.
+        context.fill((int) b.x, (int) b.y, (int) (b.x + b.sidebarW), (int) (b.y + b.h), argb(245, 16, 22, 29, alpha));
+        context.fill((int) b.box1X, (int) b.boxY, (int) (b.box1X + b.boxW), (int) (b.boxY + b.boxH), argb(245, 16, 22, 29, alpha));
+        if (settingsProgress > 0.01F) {
+            context.fill((int) b.box2X, (int) b.boxY, (int) (b.box2X + b.boxW), (int) (b.boxY + b.boxH), argb(245, 18, 25, 34, alpha));
+        }
+        Render2D.drawShadow(context, b.x, b.y, b.sidebarW, b.h, 14.0F * b.scale, 10.0F * b.scale, argb(115, 0, 0, 0, alpha));
+        Render2D.drawRound(context, b.x, b.y, b.sidebarW, b.h, PANEL_RADIUS * b.scale, color(UI_PANEL, alpha));
+        Render2D.drawRoundOutline(context, b.x, b.y, b.sidebarW, b.h, PANEL_RADIUS * b.scale, 1.0F, color(UI_BORDER, alpha));
 
         drawSidebar(context, b, mouseX, mouseY, alpha, dt);
         drawGroupboxes(context, b, mouseX, mouseY, alpha, dt);
@@ -1253,15 +1369,15 @@ public final class ModernClickGuiRenderer {
         float searchW = b.sidebarW - 24.0F * scale;
         float searchH = 26.0F * scale;
 
-        Render2D.drawRound(context, searchX, searchY, searchW, searchH, 6.0F * scale, argb(255, 15, 17, 24, alpha));
-        Render2D.drawRoundOutline(context, searchX, searchY, searchW, searchH, 6.0F * scale, 1.0F, searchFocused ? argb(180, 124, 58, 237, alpha) : argb(255, 26, 29, 39, alpha));
-        Render2D.drawLine(context, searchX + 4.0F * scale, searchY + 1.0F, searchX + searchW - 4.0F * scale, searchY + 1.0F, 1.0F, argb(15, 255, 255, 255, alpha));
+        Render2D.drawRound(context, searchX, searchY, searchW, searchH, CONTROL_RADIUS * scale, color(UI_SURFACE, alpha));
+        Render2D.drawRoundOutline(context, searchX, searchY, searchW, searchH, CONTROL_RADIUS * scale, 1.0F,
+                color(searchFocused ? getAccentColor() : UI_BORDER_SOFT, alpha * (searchFocused ? 0.85F : 1.0F)));
         
-        drawTexture(context, ICON_SEARCH, searchX + 8.0F * scale, searchY + 6.5F * scale, 13.0F * scale, 13.0F * scale, argb(140, 140, 152, 170, alpha));
+        drawTexture(context, ICON_SEARCH, searchX + 8.0F * scale, searchY + 6.5F * scale, 13.0F * scale, 13.0F * scale, color(UI_TEXT_MUTED, alpha));
         String queryText = search.isEmpty()
                 ? (searchFocused ? (System.currentTimeMillis() % 1000L < 500L ? "|" : "") : t("Поиск... (Ctrl+F)", "Search... (Ctrl+F)"))
                 : (search + (searchFocused && System.currentTimeMillis() % 1000L < 500L ? "|" : ""));
-        ModernFont.draw(context, queryText, searchX + 26.0F * scale, centeredTextY(searchY, searchH, 11.0F * scale, ModernFont.Type.INTER_MEDIUM), 11.0F * scale, argb(230, 235, 240, 245, alpha), ModernFont.Type.INTER_MEDIUM);
+        ModernFont.draw(context, queryText, searchX + 26.0F * scale, centeredTextY(searchY, searchH, 11.0F * scale, ModernFont.Type.INTER_MEDIUM), 11.0F * scale, color(search.isEmpty() ? UI_TEXT_MUTED : UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
 
         if (!search.isEmpty()) {
             float clrSize = 14.0F * scale;
@@ -1270,7 +1386,7 @@ public final class ModernClickGuiRenderer {
             boolean clrHover = inside(mouseX, mouseY, clrX, clrY, clrSize, clrSize);
             Render2D.drawRound(context, clrX, clrY, clrSize, clrSize, 3.0F * scale, clrHover ? argb(60, 239, 68, 68, alpha) : argb(20, 255, 255, 255, alpha));
             float ccx = clrX + clrSize * 0.5F, ccy = clrY + clrSize * 0.5F, ccr = 2.5F * scale;
-            int crossCol = clrHover ? argb(255, 252, 165, 165, alpha) : argb(140, 148, 163, 184, alpha);
+            int crossCol = clrHover ? argb(255, 252, 165, 165, alpha) : color(UI_TEXT_MUTED, alpha);
             Render2D.drawLine(context, ccx - ccr, ccy - ccr, ccx + ccr, ccy + ccr, 1.0F * scale, crossCol);
             Render2D.drawLine(context, ccx + ccr, ccy - ccr, ccx - ccr, ccy + ccr, 1.0F * scale, crossCol);
         }
@@ -1287,59 +1403,50 @@ public final class ModernClickGuiRenderer {
             catIndicatorY = catIndicatorY + (targetIndicatorY - catIndicatorY) * Math.min(1.0F, dt * 14.0F);
         }
 
-        // Active category: subtle deep obsidian-violet container with crisp accent indicator
-        Render2D.drawRound(context, b.x + 12.0F * scale, catIndicatorY, b.sidebarW - 24.0F * scale, catH, 6.0F * scale, argb(255, 20, 22, 32, alpha));
-        Render2D.drawRoundOutline(context, b.x + 12.0F * scale, catIndicatorY, b.sidebarW - 24.0F * scale, catH, 6.0F * scale, 1.0F, argb(50, 139, 92, 246, alpha));
+        // Active category: subtle surface container with crisp accent indicator
+        Render2D.drawRound(context, b.x + 12.0F * scale, catIndicatorY, b.sidebarW - 24.0F * scale, catH, ROW_RADIUS * scale, color(UI_SURFACE_SELECTED, alpha));
         
-        float indW = 3.0F * scale;
+        float indW = 2.0F * scale;
         float indH = 14.0F * scale;
         float indX = b.x + 14.0F * scale;
         float indY = catIndicatorY + (catH - indH) * 0.5F;
-        Render2D.drawRound(context, indX, indY, indW, indH, 1.5F * scale, argb(255, 168, 85, 247, alpha));
+        Render2D.drawRound(context, indX, indY, indW, indH, 1.0F * scale, color(getAccentColor(), alpha));
 
         for (int i = 0; i < cats.length; i++) {
             Category cat = cats[i];
             if (i == 4) {
-                float sepY = startCatY + 4 * (catH + catSpacing) + 5.0F * scale;
+                float sepY = startCatY + 4 * (catH + catSpacing) + 6.0F * scale;
                 String utiHeader = t("УТИЛИТЫ", "UTILITIES");
                 float titleSize = 8.5F * scale;
-                float textH = ModernFont.getHeight(titleSize, ModernFont.Type.INTER_SEMIBOLD);
-                float textY = sepY + 1.0F * scale;
-                ModernFont.draw(context, utiHeader, b.x + 16.0F * scale, textY, titleSize, argb(160, 115, 128, 150, alpha), ModernFont.Type.INTER_SEMIBOLD);
-                float headerW = ModernFont.getWidth(utiHeader, titleSize, ModernFont.Type.INTER_SEMIBOLD);
-                float lineX1 = b.x + 16.0F * scale + headerW + 6.0F * scale;
-                float lineX2 = b.x + b.sidebarW - 14.0F * scale;
-                float lineY = textY + textH * 0.5F;
-                Render2D.drawLine(context, lineX1, lineY, lineX2, lineY, 1.0F, argb(255, 26, 30, 42, alpha));
+                ModernFont.draw(context, utiHeader, b.x + 16.0F * scale, sepY + 2.0F * scale, titleSize, color(UI_TEXT_MUTED, alpha * 0.75F), ModernFont.Type.INTER_SEMIBOLD);
             }
 
             boolean active = cat == selectedCategory;
             float catY = getCategoryY(cat, startCatY, catH, catSpacing, scale);
             boolean hover = inside(mouseX, mouseY, b.x + 12.0F * scale, catY, b.sidebarW - 24.0F * scale, catH);
             if (!active && hover) {
-                Render2D.drawRound(context, b.x + 12.0F * scale, catY, b.sidebarW - 24.0F * scale, catH, 6.0F * scale, argb(12, 255, 255, 255, alpha));
+                Render2D.drawRound(context, b.x + 12.0F * scale, catY, b.sidebarW - 24.0F * scale, catH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, alpha * 0.7F));
             }
-            int iconCol = active ? argb(255, 255, 255, 255, alpha) : (hover ? argb(255, 203, 166, 247, alpha) : argb(160, 148, 163, 184, alpha));
+            int iconCol = active ? color(getAccentStrongColor(), alpha) : (hover ? color(UI_TEXT_SECONDARY, alpha) : color(UI_TEXT_MUTED, alpha));
             drawTexture(context, cat.icon, b.x + 22.0F * scale, catY + 7.5F * scale, 17.0F * scale, 17.0F * scale, iconCol);
-            int textColor = active ? argb(255, 248, 250, 252, alpha) : (hover ? argb(230, 226, 232, 240, alpha) : argb(160, 148, 163, 184, alpha));
+            int textColor = active ? color(UI_TEXT, alpha) : (hover ? color(UI_TEXT, alpha) : color(UI_TEXT_MUTED, alpha));
             ModernFont.draw(context, cat.getName(en), b.x + 46.0F * scale, centeredTextY(catY, catH, 12.0F * scale, ModernFont.Type.INTER_MEDIUM), 12.0F * scale, textColor, ModernFont.Type.INTER_MEDIUM);
         }
 
         float userX = b.x + 12.0F * scale;
-        float userY = b.y + b.h - 54.0F * scale;
+        float userH = 38.0F * scale;
+        float userY = b.y + b.h - userH - 12.0F * scale;
         float userW = b.sidebarW - 24.0F * scale;
-        float userH = 42.0F * scale;
-        Render2D.drawRound(context, userX, userY, userW, userH, 6.0F * scale, argb(255, 17, 19, 27, alpha));
-        Render2D.drawRoundOutline(context, userX, userY, userW, userH, 6.0F * scale, 1.0F, argb(255, 30, 34, 46, alpha));
-        Render2D.drawLine(context, userX + 4.0F * scale, userY + 1.0F, userX + userW - 4.0F * scale, userY + 1.0F, 1.0F, argb(20, 255, 255, 255, alpha));
+        Render2D.drawRound(context, userX, userY, userW, userH, ROW_RADIUS * scale, color(UI_SURFACE, alpha * 0.55F));
         
-        float avCx = userX + 20.0F * scale, avCy = userY + 21.0F * scale, avR = 12.0F * scale;
-        Render2D.drawCircle(context, avCx, avCy, avR, argb(255, 24, 28, 40, alpha));
-        Render2D.drawCircleOutline(context, avCx, avCy, avR, 1.0F, argb(255, 42, 49, 68, alpha));
-        drawTexture(context, ICON_USER, avCx - 7.0F * scale, avCy - 7.0F * scale, 14.0F * scale, 14.0F * scale, argb(200, 196, 181, 253, alpha));
+        float avR = 9.0F * scale;
+        float avCx = userX + 18.0F * scale, avCy = userY + userH * 0.5F;
+        Render2D.drawCircle(context, avCx, avCy, avR, color(UI_SURFACE_HOVER, alpha));
+        drawTexture(context, ICON_USER, avCx - 5.5F * scale, avCy - 5.5F * scale, 11.0F * scale, 11.0F * scale, color(UI_TEXT_SECONDARY, alpha));
         MinecraftClient client = MinecraftClient.getInstance();
-        ModernFont.draw(context, client.getSession() != null ? client.getSession().getUsername() : "User", userX + 38.0F * scale, userY + 6.5F * scale, 11.5F * scale, argb(245, 241, 245, 249, alpha), ModernFont.Type.INTER_SEMIBOLD);
-        ModernFont.drawBadge(context, "LIFETIME", userX + 38.0F * scale, userY + 21.5F * scale, 0xFF2A2356, 0xFFD8B4FE, Math.round(14.0F * scale), alpha);
+        ModernFont.draw(context, client.getSession() != null ? client.getSession().getUsername() : "User", userX + 34.0F * scale, userY + 6.0F * scale, 11.0F * scale, color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        ModernFont.draw(context, "Lifetime", userX + 34.0F * scale, userY + 19.0F * scale, 8.5F * scale,
+                color(UI_TEXT_MUTED, alpha * 0.85F), ModernFont.Type.INTER_MEDIUM);
     }
 
     private void drawGroupboxes(DrawContext context, GuiBounds b, int mouseX, int mouseY, float alpha, float dt) {
@@ -1354,28 +1461,27 @@ public final class ModernClickGuiRenderer {
         boolean en = isEn();
         
         // Panel 2: Modules (Функции) - Standalone floating obsidian card
-        Render2D.drawShadow(context, b.box1X, b.boxY, b.boxW, b.boxH, 20.0F * b.scale, 16.0F * b.scale, argb(150, 0, 0, 0, alpha));
-        Render2D.drawRound(context, b.box1X, b.boxY, b.boxW, b.boxH, 10.0F * b.scale, argb(252, 11, 13, 18, alpha));
-        Render2D.drawRoundOutline(context, b.box1X, b.boxY, b.boxW, b.boxH, 10.0F * b.scale, 1.0F, argb(255, 26, 29, 39, alpha));
-        Render2D.drawLine(context, b.box1X + 10.0F * scale, b.boxY + 1.0F, b.box1X + b.boxW - 10.0F * scale, b.boxY + 1.0F, 1.0F, argb(20, 255, 255, 255, alpha));
+        Render2D.drawShadow(context, b.box1X, b.boxY, b.boxW, b.boxH, 14.0F * b.scale, 10.0F * b.scale, argb(115, 0, 0, 0, alpha));
+        Render2D.drawRound(context, b.box1X, b.boxY, b.boxW, b.boxH, PANEL_RADIUS * b.scale, color(UI_PANEL, alpha));
+        Render2D.drawRoundOutline(context, b.box1X, b.boxY, b.boxW, b.boxH, PANEL_RADIUS * b.scale, 1.0F, color(UI_BORDER, alpha));
 
         boolean hasSearch = !search.trim().isEmpty();
         Identifier headerIcon = hasSearch ? ICON_SEARCH : selectedCategory.icon;
         String headerTitle = hasSearch ? (t("Поиск: ", "Search: ") + "\"" + search.trim() + "\"") : selectedCategory.getName(en);
-        drawTexture(context, headerIcon, b.box1X + 16.0F * scale, b.boxY + 14.0F * scale, 16.0F * scale, 16.0F * scale, argb(220, 226, 232, 240, alpha));
-        ModernFont.draw(context, headerTitle, b.box1X + 38.0F * scale, b.boxY + 15.0F * scale, 12.5F * scale, argb(255, 241, 245, 249, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        drawTexture(context, headerIcon, b.box1X + 16.0F * scale, b.boxY + 14.0F * scale, 16.0F * scale, 16.0F * scale, color(UI_TEXT_SECONDARY, alpha));
+        ModernFont.draw(context, headerTitle, b.box1X + 38.0F * scale, b.boxY + 15.0F * scale, 12.5F * scale, color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
 
         // Sort Button
-        float sortBtnW = 24.0F * scale, sortBtnH = 20.0F * scale;
+        float sortBtnW = 22.0F * scale, sortBtnH = 20.0F * scale;
         float sortBtnX = b.box1X + b.boxW - sortBtnW - 14.0F * scale;
         float sortBtnY = b.boxY + 12.0F * scale;
         boolean sortHover = inside(mouseX, mouseY, sortBtnX, sortBtnY, sortBtnW, sortBtnH);
-        Render2D.drawRound(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, 5.0F * scale,
-                sortHover || sortDropdownOpen ? argb(255, 28, 32, 46, alpha) : argb(255, 20, 23, 33, alpha));
-        Render2D.drawRoundOutline(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, 5.0F * scale, 1.0F,
-                sortHover || sortDropdownOpen ? argb(200, 124, 58, 237, alpha) : argb(255, 32, 37, 50, alpha));
-        drawTexture(context, ICON_SORT, sortBtnX + 5.0F * scale, sortBtnY + 3.0F * scale, 14.0F * scale, 14.0F * scale,
-                sortHover || sortDropdownOpen ? argb(255, 255, 255, 255, alpha) : argb(170, 148, 163, 184, alpha));
+        Render2D.drawRound(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, CONTROL_RADIUS * scale,
+                sortHover || sortDropdownOpen ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+        Render2D.drawRoundOutline(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, CONTROL_RADIUS * scale, 1.0F,
+                sortHover || sortDropdownOpen ? color(UI_ACCENT, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
+        drawTexture(context, ICON_SORT, sortBtnX + 4.0F * scale, sortBtnY + 3.0F * scale, 14.0F * scale, 14.0F * scale,
+                sortHover || sortDropdownOpen ? color(UI_TEXT, alpha) : color(UI_TEXT_MUTED, alpha));
 
         List<Module> modules = getFilteredModules();
         long pinnedCount = modules.stream().filter(m -> PINNED_MODULES.contains(m.getName())).count();
@@ -1424,11 +1530,8 @@ public final class ModernClickGuiRenderer {
         // Smooth rolling gliding selection pill
         if (moduleIndicatorAlpha > 0.01F && moduleIndicatorY + itemH >= scissorTop - 10.0F * scale && moduleIndicatorY <= scissorBottom + 10.0F * scale) {
             float pillAlpha = alpha * moduleIndicatorAlpha;
-            Render2D.drawRound(context, b.box1X + 8.0F * scale, moduleIndicatorY, b.boxW - 16.0F * scale, itemH, 6.0F * scale, argb(255, 22, 26, 38, pillAlpha));
-            Render2D.drawRoundOutline(context, b.box1X + 8.0F * scale, moduleIndicatorY, b.boxW - 16.0F * scale, itemH, 6.0F * scale, 1.0F, argb(255, 38, 44, 62, pillAlpha));
-            Render2D.drawLine(context, b.box1X + 12.0F * scale, moduleIndicatorY + 1.0F, b.box1X + b.boxW - 12.0F * scale, moduleIndicatorY + 1.0F, 1.0F, argb(20, 255, 255, 255, pillAlpha));
-            // Subtle 2.5px left indicator pip in electric cyber violet
-            Render2D.drawRound(context, b.box1X + 10.0F * scale, moduleIndicatorY + (itemH - 12.0F * scale) * 0.5F, 2.5F * scale, 12.0F * scale, 1.0F * scale, argb(255, 139, 92, 246, pillAlpha));
+            Render2D.drawRound(context, b.box1X + 8.0F * scale, moduleIndicatorY, b.boxW - 16.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_SELECTED, pillAlpha));
+            Render2D.drawRound(context, b.box1X + 10.0F * scale, moduleIndicatorY + (itemH - 12.0F * scale) * 0.5F, 2.0F * scale, 12.0F * scale, 1.0F * scale, color(UI_ACCENT, pillAlpha));
         }
 
         float curListOffset = 0.0F;
@@ -1455,10 +1558,9 @@ public final class ModernClickGuiRenderer {
                 
                 if (!isSelected) {
                     if (isPinned) {
-                        Render2D.drawRound(context, b.box1X + 8.0F * scale, curY, b.boxW - 16.0F * scale, itemH, 6.0F * scale, argb(10, 139, 92, 246, alpha));
-                        Render2D.drawRoundOutline(context, b.box1X + 8.0F * scale, curY, b.boxW - 16.0F * scale, itemH, 6.0F * scale, 1.0F, argb(30, 139, 92, 246, alpha));
+                        Render2D.drawRound(context, b.box1X + 8.0F * scale, curY, b.boxW - 16.0F * scale, itemH, ROW_RADIUS * scale, color(UI_ACCENT, alpha * 0.055F));
                     } else if (hover) {
-                        Render2D.drawRound(context, b.box1X + 8.0F * scale, curY, b.boxW - 16.0F * scale, itemH, 6.0F * scale, argb(10, 255, 255, 255, alpha));
+                        Render2D.drawRound(context, b.box1X + 8.0F * scale, curY, b.boxW - 16.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, alpha * 0.72F));
                     }
                 }
 
@@ -1467,7 +1569,7 @@ public final class ModernClickGuiRenderer {
                 if (isPinned) {
                     float pinSize = 12.0F * scale;
                     float pinY = curY + (itemH - pinSize) * 0.5F;
-                    drawTexture(context, ICON_PIN, b.box1X + 16.0F * scale, pinY, pinSize, pinSize, argb(220, 192, 132, 252, alpha));
+                    drawTexture(context, ICON_PIN, b.box1X + 16.0F * scale, pinY, pinSize, pinSize, color(UI_ACCENT, alpha * 0.9F));
                 }
                 int modNameCol = sessionToggleTarget(mod).isEnabled() ? argb(255, 238, 242, 246, alpha) : argb(150, 148, 163, 184, alpha);
                 ModernFont.draw(context, mod.getName(), nameX, modNameY, 11.5F * scale, modNameCol, ModernFont.Type.INTER_MEDIUM);
@@ -1483,42 +1585,46 @@ public final class ModernClickGuiRenderer {
                 curListenAnim += ((isListening ? 1.0F : 0.0F) - curListenAnim) * Math.min(1.0F, dt * 16.0F);
                 bindListeningAnim.put(mod, curListenAnim);
 
-                float baseDotsW = 18.0F * scale, dotsH = 18.0F * scale;
+                float clusterGap = 8.0F * scale;
+                float baseDotsW = 16.0F * scale, dotsH = 16.0F * scale;
                 float expandedDotsW = 114.0F * scale;
                 float dotsW = baseDotsW + (expandedDotsW - baseDotsW) * easeOutCubic(curListenAnim);
-                float dotsX = toggleX - dotsW - 8.0F * scale;
+                float dotsX = toggleX - dotsW - clusterGap;
                 float dotsY = curY + (itemH - dotsH) * 0.5F;
 
-                // Bound Key badge - cleanly anchored next to the 3-dots button
+                // Secondary controls (keybind & overflow) appear on hover, selection, open menu, or listening
+                boolean isMenuOpen = activeContextMenuModule == mod && !contextMenuClosing;
+                boolean showSecondary = hover || isSelected || isMenuOpen || isListening;
+
+                // Bound Key badge - right-aligned directly before the overflow button
                 int boundKey = MODULE_BINDS.getOrDefault(mod.getName(), 0);
                 boolean hasBind = boundKey != 0 && boundKey != GLFW.GLFW_KEY_UNKNOWN;
                 if (hasBind) {
                     lastBoundKeyNames.put(mod, KeybindSetting.getKeyName(boundKey, en));
                 }
 
-                float curBadgeAnim = bindBadgeAnim.getOrDefault(mod, hasBind ? 1.0F : 0.0F);
-                float targetBadgeAnim = (hasBind && !isListening) ? 1.0F : 0.0F;
+                float curBadgeAnim = bindBadgeAnim.getOrDefault(mod, (hasBind && showSecondary) ? 1.0F : 0.0F);
+                float targetBadgeAnim = (hasBind && !isListening && showSecondary) ? 1.0F : 0.0F;
                 curBadgeAnim += (targetBadgeAnim - curBadgeAnim) * Math.min(1.0F, dt * 16.0F);
                 bindBadgeAnim.put(mod, curBadgeAnim);
 
                 if (curBadgeAnim > 0.01F) {
                     String keyName = lastBoundKeyNames.getOrDefault(mod, "");
                     if (!keyName.isEmpty()) {
-                        float keyTextW = ModernFont.getWidth(keyName, 8.5F * scale, ModernFont.Type.INTER_SEMIBOLD);
-                        float badgeH = 15.0F * scale;
-                        float badgeW = keyName.length() <= 1 ? badgeH : Math.max(badgeH, keyTextW + 8.0F * scale);
-                        float badgeX = dotsX - badgeW - 6.0F * scale;
+                        float keyTextW = ModernFont.getWidth(keyName, 8.0F * scale, ModernFont.Type.INTER_MEDIUM);
+                        float badgeH = 13.0F * scale;
+                        float badgeW = keyName.length() <= 1 ? 14.0F * scale : Math.max(14.0F * scale, keyTextW + 8.0F * scale);
+                        float badgeX = dotsX - badgeW - clusterGap;
                         float badgeY = curY + (itemH - badgeH) * 0.5F;
 
                         float nameW = ModernFont.getWidth(mod.getName(), 11.5F * scale, ModernFont.Type.INTER_MEDIUM);
-                        if (badgeX > nameX + nameW + 6.0F * scale) {
+                        if (badgeX > nameX + nameW + 8.0F * scale) {
                             float bAlpha = alpha * curBadgeAnim;
-                            // Clean dark obsidian keycap styling (exact square with geometric optical centering)
-                            Render2D.drawRound(context, badgeX, badgeY, badgeW, badgeH, 4.0F * scale, argb(255, 18, 20, 28, bAlpha));
-                            Render2D.drawRoundOutline(context, badgeX, badgeY, badgeW, badgeH, 4.0F * scale, 1.0F, argb(255, 38, 42, 58, bAlpha));
-                            Render2D.drawLine(context, badgeX + 2.5F * scale, badgeY + 1.0F, badgeX + badgeW - 2.5F * scale, badgeY + 1.0F, 1.0F, argb(18, 255, 255, 255, bAlpha));
-                            float textY = centeredTextY(badgeY, badgeH, 8.5F * scale, ModernFont.Type.INTER_SEMIBOLD) - 1.25F * scale;
-                            ModernFont.drawCentered(context, keyName, badgeX + badgeW * 0.5F, textY, 8.5F * scale, argb(255, 160, 172, 192, bAlpha), ModernFont.Type.INTER_SEMIBOLD);
+                            // Quiet secondary metadata styling (compact, subtle contrast, no top highlight)
+                            Render2D.drawRound(context, badgeX, badgeY, badgeW, badgeH, 3.0F * scale, color(UI_SURFACE, bAlpha * 0.9F));
+                            Render2D.drawRoundOutline(context, badgeX, badgeY, badgeW, badgeH, 3.0F * scale, 1.0F, color(UI_BORDER_SOFT, bAlpha * 0.75F));
+                            float textY = centeredTextY(badgeY, badgeH, 8.0F * scale, ModernFont.Type.INTER_MEDIUM) - 0.5F * scale;
+                            ModernFont.drawCentered(context, keyName, badgeX + badgeW * 0.5F, textY, 8.0F * scale, color(UI_TEXT_MUTED, bAlpha), ModernFont.Type.INTER_MEDIUM);
                         }
                     }
                 } else if (!hasBind) {
@@ -1526,25 +1632,25 @@ public final class ModernClickGuiRenderer {
                 }
 
                 boolean dotsHover = inside(mouseX, mouseY, dotsX, dotsY, dotsW, dotsH);
-                boolean isMenuOpen = activeContextMenuModule == mod && !contextMenuClosing;
 
                 if (curListenAnim > 0.001F) {
                     float pAlpha = alpha * Math.min(1.0F, curListenAnim * 1.5F);
-                    Render2D.drawRound(context, dotsX, dotsY, dotsW, dotsH, 4.0F * scale, argb(255, 18, 20, 28, pAlpha));
-                    drawDashedOutline(context, dotsX, dotsY, dotsW, dotsH, scale, argb(180, 139, 92, 246, pAlpha));
+                    Render2D.drawRound(context, dotsX, dotsY, dotsW, dotsH, CONTROL_RADIUS * scale, color(UI_SURFACE, pAlpha));
+                    drawDashedOutline(context, dotsX, dotsY, dotsW, dotsH, scale, color(UI_ACCENT, pAlpha));
 
                     if (curListenAnim > 0.3F) {
                         float textFade = ((curListenAnim - 0.3F) / 0.7F) * pAlpha;
                         String prompt = t("Нажмите кнопку...", "Press any key...");
-                        ModernFont.drawCentered(context, prompt, dotsX + dotsW * 0.5F, centeredTextY(dotsY, dotsH, 9.0F * scale, ModernFont.Type.INTER_MEDIUM), 9.0F * scale, argb(255, 203, 213, 225, textFade), ModernFont.Type.INTER_MEDIUM);
+                        ModernFont.drawCentered(context, prompt, dotsX + dotsW * 0.5F, centeredTextY(dotsY, dotsH, 9.0F * scale, ModernFont.Type.INTER_MEDIUM), 9.0F * scale, color(UI_ACCENT_STRONG, textFade), ModernFont.Type.INTER_MEDIUM);
                     }
-                } else {
+                } else if (showSecondary) {
                     if (dotsHover || isMenuOpen) {
-                        Render2D.drawRound(context, dotsX, dotsY, dotsW, dotsH, 4.0F * scale, argb(255, 30, 35, 48, alpha));
-                        Render2D.drawRoundOutline(context, dotsX, dotsY, dotsW, dotsH, 4.0F * scale, 1.0F, argb(255, 44, 52, 72, alpha));
+                        Render2D.drawRound(context, dotsX, dotsY, dotsW, dotsH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, alpha));
                     }
-                    drawTexture(context, ICON_DOTS, Math.round(dotsX + 2.0F * scale), Math.round(dotsY + 2.0F * scale), Math.round(14.0F * scale), Math.round(14.0F * scale),
-                            dotsHover || isMenuOpen ? argb(255, 255, 255, 255, alpha) : argb(120, 148, 163, 184, alpha));
+                    float iconSize = 12.0F * scale;
+                    drawTexture(context, ICON_DOTS, Math.round(dotsX + (dotsW - iconSize) * 0.5F), Math.round(dotsY + (dotsH - iconSize) * 0.5F),
+                            Math.round(iconSize), Math.round(iconSize),
+                            dotsHover || isMenuOpen ? color(UI_TEXT, alpha) : color(UI_TEXT_MUTED, alpha * 0.85F));
                 }
 
                 drawToggle(context, "mod_" + mod.getName(), toggleX, toggleY, toggleW, toggleH, sessionToggleTarget(mod).isEnabled(), alpha, dt, scale);
@@ -1573,19 +1679,15 @@ public final class ModernClickGuiRenderer {
         boolean en = isEn();
         
         // Panel 3: Settings (Настройки) - Standalone floating obsidian card
-        Render2D.drawShadow(context, b.box2X, b.boxY, b.boxW, b.boxH, 20.0F * b.scale, 16.0F * b.scale, argb(150, 0, 0, 0, alpha));
-        Render2D.drawRound(context, b.box2X, b.boxY, b.boxW, b.boxH, 10.0F * b.scale, argb(252, 11, 13, 18, alpha));
-        Render2D.drawRoundOutline(context, b.box2X, b.boxY, b.boxW, b.boxH, 10.0F * b.scale, 1.0F, argb(255, 26, 29, 39, alpha));
-        Render2D.drawLine(context, b.box2X + 10.0F * scale, b.boxY + 1.0F, b.box2X + b.boxW - 10.0F * scale, b.boxY + 1.0F, 1.0F, argb(20, 255, 255, 255, alpha));
+        Render2D.drawShadow(context, b.box2X, b.boxY, b.boxW, b.boxH, 14.0F * b.scale, 10.0F * b.scale, argb(115, 0, 0, 0, alpha));
+        Render2D.drawRound(context, b.box2X, b.boxY, b.boxW, b.boxH, PANEL_RADIUS * b.scale, color(UI_PANEL_ALT, alpha));
+        Render2D.drawRoundOutline(context, b.box2X, b.boxY, b.boxW, b.boxH, PANEL_RADIUS * b.scale, 1.0F, color(UI_BORDER, alpha));
 
         if (selectedModule == null) {
-            drawTexture(context, ICON_INFO, b.box2X + b.boxW * 0.5F - 12.0F * scale, b.boxY + b.boxH * 0.5F - 28.0F * scale, 24.0F * scale, 24.0F * scale, argb(100, 148, 163, 184, alpha));
-            ModernFont.drawCentered(context, t("Выберите модуль слева", "Select a module on the left"), b.box2X + b.boxW * 0.5F, b.boxY + b.boxH * 0.5F + 6.0F * scale, 12.5F * scale, argb(140, 148, 163, 184, alpha), ModernFont.Type.INTER_MEDIUM);
+            drawTexture(context, ICON_INFO, b.box2X + b.boxW * 0.5F - 12.0F * scale, b.boxY + b.boxH * 0.5F - 28.0F * scale, 24.0F * scale, 24.0F * scale, color(UI_TEXT_MUTED, alpha * 0.7F));
+            ModernFont.drawCentered(context, t("Выберите модуль слева", "Select a module on the left"), b.box2X + b.boxW * 0.5F, b.boxY + b.boxH * 0.5F + 6.0F * scale, 12.5F * scale, color(UI_TEXT_MUTED, alpha), ModernFont.Type.INTER_MEDIUM);
             return;
         }
-
-        // Header: White Wrench Icon + Module Name Settings
-        drawTexture(context, ICON_WRENCH, b.box2X + 16.0F * scale, b.boxY + 14.0F * scale, 16.0F * scale, 16.0F * scale, argb(230, 235, 240, 245, alpha));
 
         // Neat collapse button at top-right
         float closeBtnW = 20.0F * scale, closeBtnH = 20.0F * scale;
@@ -1593,24 +1695,23 @@ public final class ModernClickGuiRenderer {
         float closeBtnY = b.boxY + 11.0F * scale;
         boolean closeHover = inside(mouseX, mouseY, closeBtnX, closeBtnY, closeBtnW, closeBtnH);
 
-        Render2D.drawRound(context, closeBtnX, closeBtnY, closeBtnW, closeBtnH, 4.0F * scale,
-                closeHover ? argb(255, 28, 32, 46, alpha) : argb(255, 18, 20, 30, alpha));
-        Render2D.drawRoundOutline(context, closeBtnX, closeBtnY, closeBtnW, closeBtnH, 4.0F * scale, 1.0F,
-                closeHover ? argb(200, 139, 92, 246, alpha) : argb(255, 32, 37, 50, alpha));
+        if (closeHover) {
+            Render2D.drawRound(context, closeBtnX, closeBtnY, closeBtnW, closeBtnH, CONTROL_RADIUS * scale, color(UI_SURFACE_HOVER, alpha));
+        }
 
         // Clean collapse icon: dock bar + left chevron [|<]
         float ccx = closeBtnX + closeBtnW * 0.5F;
         float ccy = closeBtnY + closeBtnH * 0.5F;
         float arm = 3.5F * scale;
-        int iconCol = closeHover ? argb(255, 255, 255, 255, alpha) : argb(160, 148, 163, 184, alpha);
+        int iconCol = closeHover ? color(UI_TEXT, alpha) : color(UI_TEXT_MUTED, alpha);
         Render2D.drawLine(context, ccx - 3.5F * scale, ccy - arm, ccx - 3.5F * scale, ccy + arm, 1.5F * scale, iconCol);
         Render2D.drawLine(context, ccx + 2.5F * scale, ccy - arm, ccx - 1.0F * scale, ccy, 1.5F * scale, iconCol);
         Render2D.drawLine(context, ccx - 1.0F * scale, ccy, ccx + 2.5F * scale, ccy + arm, 1.5F * scale, iconCol);
         
-        float maxTitleW = closeBtnX - (b.box2X + 38.0F * scale) - 8.0F * scale;
-        context.enableScissor((int) (b.box2X + 38.0F * scale), (int) b.boxY, (int) (b.box2X + 38.0F * scale + maxTitleW), (int) (b.boxY + 36.0F * scale));
+        float maxTitleW = closeBtnX - (b.box2X + 16.0F * scale) - 8.0F * scale;
+        context.enableScissor((int) (b.box2X + 16.0F * scale), (int) b.boxY, (int) (b.box2X + 16.0F * scale + maxTitleW), (int) (b.boxY + 36.0F * scale));
         String headerTitle = selectedModule.getName() + " " + t("Настройки", "Settings");
-        ModernFont.draw(context, headerTitle, b.box2X + 38.0F * scale, b.boxY + 15.0F * scale, 12.5F * scale, argb(255, 241, 245, 249, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        ModernFont.draw(context, headerTitle, b.box2X + 16.0F * scale, b.boxY + 15.0F * scale, 12.5F * scale, color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
         context.disableScissor();
 
         float rowW = b.rowW;
@@ -1694,7 +1795,7 @@ public final class ModernClickGuiRenderer {
                         itemY += addedH;
                     } else {
                         float curAnim = dropdownAnim.getOrDefault(mode, 0.0F);
-                        itemY += 34.0F * scale + mode.getModes().size() * (22.0F * scale) * curAnim;
+                        itemY += 34.0F * scale + mode.getModes().size() * (20.0F * scale) * curAnim;
                     }
                 } else if (s instanceof MultiModeSetting multi) {
                     if (itemY + 34.0F * scale >= scissorTop && itemY <= scissorBottom + 200.0F * scale) {
@@ -1702,11 +1803,16 @@ public final class ModernClickGuiRenderer {
                         itemY += addedH;
                     } else {
                         float curAnim = multiDropdownAnim.getOrDefault(multi, 0.0F);
-                        itemY += 34.0F * scale + multi.getAllOptions().size() * (22.0F * scale) * curAnim;
+                        itemY += 34.0F * scale + multi.getAllOptions().size() * (20.0F * scale) * curAnim;
                     }
                 } else if (s instanceof ColorSetting color) {
                     if (itemY + 34.0F * scale >= scissorTop && itemY <= scissorBottom) {
                         drawColorRow(context, color, b.box2X + 16.0F * scale, itemY, rowW, mouseX, mouseY, alpha, scale);
+                    }
+                    itemY += 34.0F * scale;
+                } else if (s instanceof ActionSetting act) {
+                    if (itemY + 34.0F * scale >= scissorTop && itemY <= scissorBottom) {
+                        drawActionRow(context, act, b.box2X + 16.0F * scale, itemY, rowW, mouseX, mouseY, alpha, scale);
                     }
                     itemY += 34.0F * scale;
                 } else if (s instanceof StringSetting str) {
@@ -1758,14 +1864,17 @@ public final class ModernClickGuiRenderer {
     }
 
     private void drawSectionHeader(DrawContext context, String title, Identifier icon, float x, float y, float w, float alpha, float scale) {
-        drawTexture(context, icon, x, y + 1.0F * scale, 13.0F * scale, 13.0F * scale, argb(160, 122, 128, 153, alpha));
         float titleSize = 8.5F * scale;
-        ModernFont.draw(context, title, x + 18.0F * scale, centeredTextY(y, 15.0F * scale, titleSize, ModernFont.Type.INTER_SEMIBOLD), titleSize,
-                argb(175, 115, 128, 150, alpha), ModernFont.Type.INTER_SEMIBOLD);
-        float titleW = ModernFont.getWidth(title, titleSize, ModernFont.Type.INTER_SEMIBOLD) + 24.0F * scale;
-        if (x + titleW < x + w) {
-            Render2D.drawLine(context, x + titleW, y + 7.5F * scale, x + w, y + 7.5F * scale, 1.0F, argb(255, 22, 25, 34, alpha));
+        MsdfIcons.Icon glyph = msdfIcon(icon);
+        float titleX = x;
+        if (glyph != null) {
+            float iconSize = 11.0F * scale;
+            MsdfIcons.draw(context, glyph, x, y + (15.0F * scale - iconSize) * 0.5F, iconSize, iconSize,
+                    color(UI_TEXT_MUTED, alpha * 0.88F));
+            titleX += 15.0F * scale;
         }
+        ModernFont.draw(context, title, titleX, centeredTextY(y, 15.0F * scale, titleSize, ModernFont.Type.INTER_SEMIBOLD), titleSize,
+                color(UI_TEXT_MUTED, alpha * 0.88F), ModernFont.Type.INTER_SEMIBOLD);
     }
 
     private void drawMacroManager(DrawContext context, float x, float y, float w, float h, int mouseX, int mouseY, float alpha, float dt, float scale) {
@@ -1802,35 +1911,35 @@ public final class ModernClickGuiRenderer {
                 float bindBtnW = 54.0F * scale;
                 float textW = w - delBtnW - bindBtnW - 12.0F * scale;
 
-                Render2D.drawRound(context, x, itemY, textW, boxH, 5.0F * scale, focused ? argb(255, 24, 29, 44, alpha) : argb(255, 20, 24, 36, alpha));
-                Render2D.drawRoundOutline(context, x, itemY, textW, boxH, 5.0F * scale, 1.0F, focused ? argb(200, 124, 58, 237, alpha) : argb(255, 38, 45, 64, alpha));
+                Render2D.drawRound(context, x, itemY, textW, boxH, CONTROL_RADIUS * scale, focused ? color(UI_SURFACE_SELECTED, alpha) : color(UI_SURFACE, alpha));
+                Render2D.drawRoundOutline(context, x, itemY, textW, boxH, CONTROL_RADIUS * scale, 1.0F, focused ? color(UI_ACCENT, alpha) : color(UI_BORDER_SOFT, alpha));
                 String shownText = entry.text() + (focused && (System.currentTimeMillis() % 1000L < 500L) ? "|" : "");
                 drawMarqueeText(context, shownText.isEmpty() && !focused ? t("Команда или текст...", "Command or text...") : shownText, x, itemY, textW, boxH, 11.0F * scale,
-                        shownText.isEmpty() && !focused ? argb(140, 148, 163, 184, alpha) : argb(255, 240, 245, 255, alpha), focused, scale);
+                        shownText.isEmpty() && !focused ? color(UI_TEXT_MUTED, alpha) : color(UI_TEXT, alpha), focused, scale);
 
                 float bindX = x + textW + 6.0F * scale;
                 boolean listening = listeningMacroIndex == i;
                 boolean bindHover = inside(mouseX, mouseY, bindX, itemY, bindBtnW, boxH);
-                Render2D.drawRound(context, bindX, itemY, bindBtnW, boxH, 5.0F * scale, argb(255, 20, 24, 36, alpha));
+                Render2D.drawRound(context, bindX, itemY, bindBtnW, boxH, CONTROL_RADIUS * scale, color(UI_SURFACE, alpha));
                 if (listening) {
-                    drawAnimatedDashedBorder(context, bindX, itemY, bindBtnW, boxH, 1.0F * scale, argb(255, 192, 132, 252, alpha));
+                    drawAnimatedDashedBorder(context, bindX, itemY, bindBtnW, boxH, 1.0F * scale, color(UI_ACCENT, alpha));
                 } else {
-                    Render2D.drawRoundOutline(context, bindX, itemY, bindBtnW, boxH, 5.0F * scale, 1.0F, bindHover ? argb(200, 124, 58, 237, alpha) : argb(255, 38, 45, 64, alpha));
+                    Render2D.drawRoundOutline(context, bindX, itemY, bindBtnW, boxH, CONTROL_RADIUS * scale, 1.0F, bindHover ? color(UI_ACCENT, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
                 }
 
                 String keyText = listening ? "..." : KeybindSetting.getKeyName(entry.keyCode(), isEn());
                 float fontSize = 10.0F * scale;
                 ModernFont.drawCentered(context, keyText, bindX + bindBtnW * 0.5F, centeredTextY(itemY, boxH, fontSize, ModernFont.Type.SF_BOLD), fontSize,
-                        listening ? argb(255, 216, 180, 254, alpha) : argb(255, 226, 232, 240, alpha), ModernFont.Type.SF_BOLD);
+                        listening ? color(UI_ACCENT_STRONG, alpha) : color(UI_TEXT, alpha), ModernFont.Type.SF_BOLD);
 
                 float delX = bindX + bindBtnW + 6.0F * scale;
                 boolean delHover = inside(mouseX, mouseY, delX, itemY, delBtnW, boxH);
-                Render2D.drawRound(context, delX, itemY, delBtnW, boxH, 5.0F * scale, delHover ? argb(35, 220, 70, 70, alpha) : argb(16, 255, 255, 255, alpha));
-                Render2D.drawRoundOutline(context, delX, itemY, delBtnW, boxH, 5.0F * scale, 1.0F, delHover ? argb(140, 220, 70, 70, alpha) : argb(255, 36, 42, 58, alpha));
+                Render2D.drawRound(context, delX, itemY, delBtnW, boxH, CONTROL_RADIUS * scale, delHover ? color(UI_DANGER, alpha * 0.15F) : color(UI_SURFACE, alpha));
+                Render2D.drawRoundOutline(context, delX, itemY, delBtnW, boxH, CONTROL_RADIUS * scale, 1.0F, delHover ? color(UI_DANGER, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
                 float cx = delX + delBtnW * 0.5F;
                 float cy = itemY + boxH * 0.5F;
                 float cr = 3.0F * scale;
-                int crossCol = delHover ? argb(255, 248, 140, 140, alpha) : argb(160, 148, 163, 184, alpha);
+                int crossCol = delHover ? color(UI_DANGER, alpha) : color(UI_TEXT_MUTED, alpha);
                 Render2D.drawLine(context, cx - cr, cy - cr, cx + cr, cy + cr, 1.2F * scale, crossCol);
                 Render2D.drawLine(context, cx + cr, cy - cr, cx - cr, cy + cr, 1.2F * scale, crossCol);
             }
@@ -1839,9 +1948,9 @@ public final class ModernClickGuiRenderer {
 
         if (itemY + 24.0F * scale >= scissorTop && itemY <= scissorBottom) {
             boolean addHover = inside(mouseX, mouseY, x, itemY + 4.0F * scale, w, 24.0F * scale);
-            Render2D.drawRound(context, x, itemY + 4.0F * scale, w, 24.0F * scale, 5.0F * scale, addHover ? argb(40, 124, 58, 237, alpha) : argb(20, 124, 58, 237, alpha));
-            Render2D.drawRoundOutline(context, x, itemY + 4.0F * scale, w, 24.0F * scale, 5.0F * scale, 1.0F, argb(100, 124, 58, 237, alpha));
-            ModernFont.drawCentered(context, t("+ Добавить макрос", "+ Add Macro"), x + w * 0.5F, itemY + 10.5F * scale, 11.0F * scale, argb(255, 196, 181, 253, alpha), ModernFont.Type.SF_BOLD);
+            Render2D.drawRound(context, x, itemY + 4.0F * scale, w, 24.0F * scale, CONTROL_RADIUS * scale, addHover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+            Render2D.drawRoundOutline(context, x, itemY + 4.0F * scale, w, 24.0F * scale, CONTROL_RADIUS * scale, 1.0F, addHover ? color(UI_ACCENT, alpha * 0.7F) : color(UI_BORDER_SOFT, alpha));
+            ModernFont.drawCentered(context, t("+ Добавить макрос", "+ Add Macro"), x + w * 0.5F, itemY + 10.5F * scale, 11.0F * scale, color(UI_ACCENT, alpha), ModernFont.Type.SF_BOLD);
         }
         context.disableScissor();
         Render2D.popScissor();
@@ -1881,35 +1990,35 @@ public final class ModernClickGuiRenderer {
                 float bindBtnW = 54.0F * scale;
                 float textW = w - delBtnW - bindBtnW - 12.0F * scale;
 
-                Render2D.drawRound(context, x, itemY, textW, boxH, 5.0F * scale, focused ? argb(255, 24, 29, 44, alpha) : argb(255, 20, 24, 36, alpha));
-                Render2D.drawRoundOutline(context, x, itemY, textW, boxH, 5.0F * scale, 1.0F, focused ? argb(200, 124, 58, 237, alpha) : argb(255, 38, 45, 64, alpha));
+                Render2D.drawRound(context, x, itemY, textW, boxH, CONTROL_RADIUS * scale, focused ? color(UI_SURFACE_SELECTED, alpha) : color(UI_SURFACE, alpha));
+                Render2D.drawRoundOutline(context, x, itemY, textW, boxH, CONTROL_RADIUS * scale, 1.0F, focused ? color(UI_ACCENT, alpha) : color(UI_BORDER_SOFT, alpha));
                 String shownText = entry.text() + (focused && (System.currentTimeMillis() % 1000L < 500L) ? "|" : "");
                 drawMarqueeText(context, shownText.isEmpty() && !focused ? t("Ник или текст...", "Player name or text...") : shownText, x, itemY, textW, boxH, 11.0F * scale,
-                        shownText.isEmpty() && !focused ? argb(140, 148, 163, 184, alpha) : argb(255, 240, 245, 255, alpha), focused, scale);
+                        shownText.isEmpty() && !focused ? color(UI_TEXT_MUTED, alpha) : color(UI_TEXT, alpha), focused, scale);
 
                 float bindX = x + textW + 6.0F * scale;
                 boolean listening = listeningNameBindIndex == i;
                 boolean bindHover = inside(mouseX, mouseY, bindX, itemY, bindBtnW, boxH);
-                Render2D.drawRound(context, bindX, itemY, bindBtnW, boxH, 5.0F * scale, argb(255, 20, 24, 36, alpha));
+                Render2D.drawRound(context, bindX, itemY, bindBtnW, boxH, CONTROL_RADIUS * scale, color(UI_SURFACE, alpha));
                 if (listening) {
-                    drawAnimatedDashedBorder(context, bindX, itemY, bindBtnW, boxH, 1.0F * scale, argb(255, 192, 132, 252, alpha));
+                    drawAnimatedDashedBorder(context, bindX, itemY, bindBtnW, boxH, 1.0F * scale, color(UI_ACCENT, alpha));
                 } else {
-                    Render2D.drawRoundOutline(context, bindX, itemY, bindBtnW, boxH, 5.0F * scale, 1.0F, bindHover ? argb(200, 124, 58, 237, alpha) : argb(255, 38, 45, 64, alpha));
+                    Render2D.drawRoundOutline(context, bindX, itemY, bindBtnW, boxH, CONTROL_RADIUS * scale, 1.0F, bindHover ? color(UI_ACCENT, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
                 }
 
                 String keyText = listening ? "..." : KeybindSetting.getKeyName(entry.keyCode(), isEn());
                 float fontSize = 10.0F * scale;
                 ModernFont.drawCentered(context, keyText, bindX + bindBtnW * 0.5F, centeredTextY(itemY, boxH, fontSize, ModernFont.Type.SF_BOLD), fontSize,
-                        listening ? argb(255, 216, 180, 254, alpha) : argb(255, 226, 232, 240, alpha), ModernFont.Type.SF_BOLD);
+                        listening ? color(UI_ACCENT_STRONG, alpha) : color(UI_TEXT, alpha), ModernFont.Type.SF_BOLD);
 
                 float delX = bindX + bindBtnW + 6.0F * scale;
                 boolean delHover = inside(mouseX, mouseY, delX, itemY, delBtnW, boxH);
-                Render2D.drawRound(context, delX, itemY, delBtnW, boxH, 5.0F * scale, delHover ? argb(35, 220, 70, 70, alpha) : argb(16, 255, 255, 255, alpha));
-                Render2D.drawRoundOutline(context, delX, itemY, delBtnW, boxH, 5.0F * scale, 1.0F, delHover ? argb(140, 220, 70, 70, alpha) : argb(255, 36, 42, 58, alpha));
+                Render2D.drawRound(context, delX, itemY, delBtnW, boxH, CONTROL_RADIUS * scale, delHover ? color(UI_DANGER, alpha * 0.15F) : color(UI_SURFACE, alpha));
+                Render2D.drawRoundOutline(context, delX, itemY, delBtnW, boxH, CONTROL_RADIUS * scale, 1.0F, delHover ? color(UI_DANGER, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
                 float cx = delX + delBtnW * 0.5F;
                 float cy = itemY + boxH * 0.5F;
                 float cr = 3.0F * scale;
-                int crossCol = delHover ? argb(255, 248, 140, 140, alpha) : argb(160, 148, 163, 184, alpha);
+                int crossCol = delHover ? color(UI_DANGER, alpha) : color(UI_TEXT_MUTED, alpha);
                 Render2D.drawLine(context, cx - cr, cy - cr, cx + cr, cy + cr, 1.2F * scale, crossCol);
                 Render2D.drawLine(context, cx + cr, cy - cr, cx - cr, cy + cr, 1.2F * scale, crossCol);
             }
@@ -1918,9 +2027,9 @@ public final class ModernClickGuiRenderer {
 
         if (itemY + 24.0F * scale >= scissorTop && itemY <= scissorBottom) {
             boolean addHover = inside(mouseX, mouseY, x, itemY + 4.0F * scale, w, 24.0F * scale);
-            Render2D.drawRound(context, x, itemY + 4.0F * scale, w, 24.0F * scale, 5.0F * scale, addHover ? argb(40, 124, 58, 237, alpha) : argb(20, 124, 58, 237, alpha));
-            Render2D.drawRoundOutline(context, x, itemY + 4.0F * scale, w, 24.0F * scale, 5.0F * scale, 1.0F, argb(100, 124, 58, 237, alpha));
-            ModernFont.drawCentered(context, t("+ Добавить никнейм", "+ Add Name"), x + w * 0.5F, itemY + 10.5F * scale, 11.0F * scale, argb(255, 196, 181, 253, alpha), ModernFont.Type.SF_BOLD);
+            Render2D.drawRound(context, x, itemY + 4.0F * scale, w, 24.0F * scale, CONTROL_RADIUS * scale, addHover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+            Render2D.drawRoundOutline(context, x, itemY + 4.0F * scale, w, 24.0F * scale, CONTROL_RADIUS * scale, 1.0F, addHover ? color(UI_ACCENT, alpha * 0.7F) : color(UI_BORDER_SOFT, alpha));
+            ModernFont.drawCentered(context, t("+ Добавить никнейм", "+ Add Name"), x + w * 0.5F, itemY + 10.5F * scale, 11.0F * scale, color(UI_ACCENT, alpha), ModernFont.Type.SF_BOLD);
         }
         context.disableScissor();
         Render2D.popScissor();
@@ -1928,20 +2037,20 @@ public final class ModernClickGuiRenderer {
 
     private void drawBooleanRow(DrawContext context, BooleanSetting bool, float x, float y, float w, int mouseX, int mouseY, float alpha, float dt, float scale) {
         float textSize = 12.0F * scale;
-        ModernFont.draw(context, getSettingDisplayName(bool.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
-        drawToggle(context, "set_" + bool.getName(), x + w - 26.0F * scale, y + 5.5F * scale, 26.0F * scale, 14.0F * scale, bool.get(), alpha, dt, scale);
+        ModernFont.draw(context, getSettingDisplayName(bool.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
+        drawToggle(context, "set_" + bool.getName(), x + w - 22.0F * scale, y + 6.0F * scale, 22.0F * scale, 12.0F * scale, bool.get(), alpha, dt, scale);
     }
 
     private void drawSliderRow(DrawContext context, SliderSetting slider, float x, float y, float w, int mouseX, int mouseY, float alpha, float dt, float scale) {
-        float valBoxW = 36.0F * scale;
-        float valBoxH = 18.0F * scale;
+        float valBoxW = 34.0F * scale;
+        float valBoxH = 16.0F * scale;
         float valBoxX = x + w - valBoxW;
-        float valBoxY = y + 3.5F * scale;
+        float valBoxY = y + 4.5F * scale;
         boolean valFocused = activeSliderInput == slider;
         boolean valHover = inside(mouseX, mouseY, valBoxX, valBoxY, valBoxW, valBoxH);
 
-        float trackW = 56.0F * scale;
-        float trackH = 3.5F * scale;
+        float trackW = 60.0F * scale;
+        float trackH = 3.0F * scale;
         float trackX = valBoxX - trackW - 8.0F * scale;
         float trackY = y + (25.0F * scale - trackH) * 0.5F;
 
@@ -1959,35 +2068,36 @@ public final class ModernClickGuiRenderer {
 
         Render2D.pushScissor(x, y, maxLabelW, 22.0F * scale);
         context.enableScissor((int) x, (int) (y - 4.0F * scale), (int) (x + maxLabelW), (int) (y + 24.0F * scale));
-        ModernFont.draw(context, displayLabel, x, centeredTextY(y, 25.0F * scale, labelSize, ModernFont.Type.INTER_MEDIUM), labelSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+        ModernFont.draw(context, displayLabel, x, centeredTextY(y, 25.0F * scale, labelSize, ModernFont.Type.INTER_MEDIUM), labelSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
         context.disableScissor();
         Render2D.popScissor();
 
-        Render2D.drawRound(context, valBoxX, valBoxY, valBoxW, valBoxH, 4.0F * scale, valFocused ? argb(255, 20, 24, 35, alpha) : (valHover ? argb(255, 20, 24, 34, alpha) : argb(255, 16, 18, 26, alpha)));
-        Render2D.drawRoundOutline(context, valBoxX, valBoxY, valBoxW, valBoxH, 4.0F * scale, 1.0F, valFocused ? argb(200, 124, 58, 237, alpha) : argb(255, 30, 35, 48, alpha));
+        Render2D.drawRound(context, valBoxX, valBoxY, valBoxW, valBoxH, 3.0F * scale, valFocused ? color(UI_SURFACE_SELECTED, alpha) : (valHover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha)));
+        Render2D.drawRoundOutline(context, valBoxX, valBoxY, valBoxW, valBoxH, 3.0F * scale, 1.0F, valFocused ? color(getAccentColor(), alpha) : color(UI_BORDER_SOFT, alpha));
 
         String displayVal = valFocused ? (sliderInputBuffer + (System.currentTimeMillis() % 1000L < 500L ? "|" : "")) : slider.getValueString();
-        ModernFont.drawCentered(context, displayVal, valBoxX + valBoxW * 0.5F, centeredTextY(valBoxY, valBoxH, 10.0F * scale, ModernFont.Type.INTER_SEMIBOLD), 10.0F * scale,
-                valFocused ? argb(255, 216, 180, 254, alpha) : argb(240, 226, 232, 240, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        ModernFont.drawCentered(context, displayVal, valBoxX + valBoxW * 0.5F, centeredTextY(valBoxY, valBoxH, 9.5F * scale, ModernFont.Type.INTER_SEMIBOLD), 9.5F * scale,
+                valFocused ? color(getAccentStrongColor(), alpha) : color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
 
-        Render2D.drawRound(context, trackX, trackY, trackW, trackH, 1.75F * scale, argb(255, 22, 25, 36, alpha));
+        Render2D.drawRound(context, trackX, trackY, trackW, trackH, 1.5F * scale, color(UI_SURFACE, alpha));
+        Render2D.drawRoundOutline(context, trackX, trackY, trackW, trackH, 1.5F * scale, 1.0F, color(UI_BORDER_SOFT, alpha));
 
         float targetNorm = slider.getNormalized(), currentNorm = sliderVisualAnim.getOrDefault(slider, targetNorm);
-        currentNorm = currentNorm + (targetNorm - currentNorm) * Math.min(1.0F, dt * 14.0F);
+        currentNorm = currentNorm + (targetNorm - currentNorm) * Math.min(1.0F, dt * 16.0F);
         sliderVisualAnim.put(slider, currentNorm);
 
         float fillW = trackW * currentNorm;
         if (fillW > 0.5F) {
-            Render2D.drawRound(context, trackX, trackY, fillW, trackH, 1.75F * scale, argb(255, 124, 58, 237, alpha));
+            Render2D.drawRound(context, trackX, trackY, fillW, trackH, 1.5F * scale, color(getAccentColor(), alpha));
         }
 
         float knobX = trackX + fillW, knobY = trackY + trackH * 0.5F;
         boolean hovered = inside(mouseX, mouseY, trackX - 6.0F * scale, trackY - 8.0F * scale, trackW + 12.0F * scale, trackH + 16.0F * scale);
-        float knobR = (hovered || activeSlider == slider) ? 4.0F * scale : 3.0F * scale;
+        float knobR = (hovered || activeSlider == slider) ? 3.5F * scale : 2.5F * scale;
 
-        Render2D.drawCircle(context, knobX, knobY + 0.5F * scale, knobR, argb(70, 0, 0, 0, alpha));
-        Render2D.drawCircle(context, knobX, knobY, knobR, argb(255, 250, 250, 255, alpha));
-        Render2D.drawCircleOutline(context, knobX, knobY, knobR, 1.0F, argb(200, 124, 58, 237, alpha));
+        Render2D.drawCircle(context, knobX, knobY + 0.5F * scale, knobR, argb(60, 0, 0, 0, alpha));
+        Render2D.drawCircle(context, knobX, knobY, knobR, color(UI_TEXT, alpha));
+        Render2D.drawCircleOutline(context, knobX, knobY, knobR, 1.0F, color(getAccentColor(), alpha));
     }
 
     private float drawModeAccordion(DrawContext context, ModeSetting mode, float x, float y, float w, int mouseX, int mouseY, float alpha, float dt, float scale) {
@@ -1996,28 +2106,40 @@ public final class ModernClickGuiRenderer {
         curAnim = curAnim + (targetAnim - curAnim) * Math.min(1.0F, dt * 18.0F);
         dropdownAnim.put(mode, curAnim);
 
-        float boxW = 136.0F * scale, baseBoxH = 22.0F * scale, boxX = x + w - boxW, boxY = y + 1.5F * scale;
+        float boxW = 156.0F * scale, baseBoxH = 20.0F * scale, boxX = x + w - boxW, boxY = y + 2.5F * scale;
         float textSize = 12.0F * scale;
-        ModernFont.draw(context, getSettingDisplayName(mode.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+        float maxLabelW = Math.max(10.0F * scale, boxX - x - 8.0F * scale);
+
+        Render2D.pushScissor(x, y, maxLabelW, 25.0F * scale);
+        context.enableScissor((int) x, (int) (y - 4.0F * scale), (int) (x + maxLabelW), (int) (y + 28.0F * scale));
+        ModernFont.draw(context, getSettingDisplayName(mode.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
+        context.disableScissor();
+        Render2D.popScissor();
 
         boolean isOpen = curAnim > 0.01F;
         boolean headerHover = inside(mouseX, mouseY, boxX, boxY, boxW, baseBoxH);
-        Render2D.drawRound(context, boxX, boxY, boxW, baseBoxH, 5.0F * scale, (headerHover || isOpen) ? argb(255, 24, 28, 40, alpha) : argb(255, 18, 21, 30, alpha));
-        Render2D.drawRoundOutline(context, boxX, boxY, boxW, baseBoxH, 5.0F * scale, 1.0F, (headerHover || isOpen) ? argb(200, 124, 58, 237, alpha) : argb(255, 30, 35, 48, alpha));
-        ModernFont.draw(context, mode.get(), boxX + 8.0F * scale, centeredTextY(boxY, baseBoxH, 10.5F * scale, ModernFont.Type.INTER_SEMIBOLD), 10.5F * scale, argb(255, 240, 245, 255, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        Render2D.drawRound(context, boxX, boxY, boxW, baseBoxH, CONTROL_RADIUS * scale, (headerHover || isOpen) ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+        Render2D.drawRoundOutline(context, boxX, boxY, boxW, baseBoxH, CONTROL_RADIUS * scale, 1.0F, (headerHover || isOpen) ? color(getAccentColor(), alpha * 0.75F) : color(UI_BORDER_SOFT, alpha));
+
+        float maxHeaderTextW = boxW - 24.0F * scale;
+        Render2D.pushScissor(boxX + 6.0F * scale, boxY, maxHeaderTextW, baseBoxH);
+        context.enableScissor((int) (boxX + 6.0F * scale), (int) boxY, (int) (boxX + 6.0F * scale + maxHeaderTextW), (int) (boxY + baseBoxH));
+        ModernFont.draw(context, mode.get(), boxX + 8.0F * scale, centeredTextY(boxY, baseBoxH, 10.0F * scale, ModernFont.Type.INTER_SEMIBOLD), 10.0F * scale, color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        context.disableScissor();
+        Render2D.popScissor();
 
         float chW = 9.0F * scale, chH = 9.0F * scale;
         float chCenterX = boxX + boxW - 12.0F * scale;
         float chCenterY = boxY + baseBoxH * 0.5F;
-        drawRotatedChevron(context, chCenterX, chCenterY, chW, chH, easeOutCubic(curAnim) * (float) Math.PI, argb(140, 148, 163, 184, alpha));
+        drawRotatedChevron(context, chCenterX, chCenterY, chW, chH, easeOutCubic(curAnim) * (float) Math.PI, color(UI_TEXT_MUTED, alpha));
 
-        float totalOptionH = mode.getModes().size() * 22.0F * scale;
+        float totalOptionH = mode.getModes().size() * 20.0F * scale;
         float animH = totalOptionH * easeOutCubic(curAnim);
 
         if (curAnim > 0.001F) {
-            float dropY = boxY + baseBoxH + 4.0F * scale;
-            Render2D.drawRound(context, boxX, dropY, boxW, animH, 5.0F * scale, argb(255, 16, 18, 26, alpha * curAnim));
-            Render2D.drawRoundOutline(context, boxX, dropY, boxW, animH, 5.0F * scale, 1.0F, argb(255, 36, 42, 60, alpha * curAnim));
+            float dropY = boxY + baseBoxH + 3.0F * scale;
+            Render2D.drawRound(context, boxX, dropY, boxW, animH, CONTROL_RADIUS * scale, color(UI_PANEL_ALT, alpha * curAnim));
+            Render2D.drawRoundOutline(context, boxX, dropY, boxW, animH, CONTROL_RADIUS * scale, 1.0F, color(UI_BORDER, alpha * curAnim));
 
             Render2D.pushScissor(boxX, dropY, boxW, animH);
             context.enableScissor((int) boxX, (int) dropY, (int) (boxX + boxW), (int) (dropY + animH));
@@ -2025,20 +2147,20 @@ public final class ModernClickGuiRenderer {
             float optY = dropY;
             for (String m : mode.getModes()) {
                 boolean active = m.equalsIgnoreCase(mode.get());
-                boolean optHover = inside(mouseX, mouseY, boxX, optY, boxW, 22.0F * scale);
+                boolean optHover = inside(mouseX, mouseY, boxX, optY, boxW, 20.0F * scale);
                 if (active) {
-                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 20.0F * scale, 4.0F * scale, argb(40, 124, 58, 237, alpha * curAnim));
+                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 18.0F * scale, ROW_RADIUS * scale, color(UI_SURFACE_SELECTED, alpha * curAnim));
                 } else if (optHover) {
-                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 20.0F * scale, 4.0F * scale, argb(20, 255, 255, 255, alpha * curAnim));
+                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 18.0F * scale, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, alpha * curAnim));
                 }
 
-                ModernFont.draw(context, m, boxX + 8.0F * scale, centeredTextY(optY, 22.0F * scale, 10.5F * scale, ModernFont.Type.INTER_MEDIUM), 10.5F * scale,
-                        active ? argb(255, 192, 132, 252, alpha * curAnim) : argb(180, 203, 213, 225, alpha * curAnim), ModernFont.Type.INTER_MEDIUM);
+                ModernFont.draw(context, m, boxX + 8.0F * scale, centeredTextY(optY, 20.0F * scale, 10.0F * scale, ModernFont.Type.INTER_MEDIUM), 10.0F * scale,
+                        active ? color(getAccentColor(), alpha * curAnim) : color(UI_TEXT_SECONDARY, alpha * curAnim), ModernFont.Type.INTER_MEDIUM);
 
                 if (active) {
-                    Render2D.drawCircle(context, boxX + boxW - 12.0F * scale, optY + 11.0F * scale, 2.5F * scale, argb(255, 124, 58, 237, alpha * curAnim));
+                    Render2D.drawCircle(context, boxX + boxW - 10.0F * scale, optY + 10.0F * scale, 2.0F * scale, color(getAccentColor(), alpha * curAnim));
                 }
-                optY += 22.0F * scale;
+                optY += 20.0F * scale;
             }
 
             context.disableScissor();
@@ -2055,28 +2177,40 @@ public final class ModernClickGuiRenderer {
         curAnim = curAnim + (targetAnim - curAnim) * Math.min(1.0F, dt * 18.0F);
         multiDropdownAnim.put(multi, curAnim);
 
-        float boxW = 136.0F * scale, baseBoxH = 22.0F * scale, boxX = x + w - boxW, boxY = y + 1.5F * scale;
+        float boxW = 156.0F * scale, baseBoxH = 20.0F * scale, boxX = x + w - boxW, boxY = y + 2.5F * scale;
         float textSize = 12.0F * scale;
-        ModernFont.draw(context, getSettingDisplayName(multi.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+        float maxLabelW = Math.max(10.0F * scale, boxX - x - 8.0F * scale);
+
+        Render2D.pushScissor(x, y, maxLabelW, 25.0F * scale);
+        context.enableScissor((int) x, (int) (y - 4.0F * scale), (int) (x + maxLabelW), (int) (y + 28.0F * scale));
+        ModernFont.draw(context, getSettingDisplayName(multi.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
+        context.disableScissor();
+        Render2D.popScissor();
 
         boolean isOpen = curAnim > 0.01F;
         boolean headerHover = inside(mouseX, mouseY, boxX, boxY, boxW, baseBoxH);
-        Render2D.drawRound(context, boxX, boxY, boxW, baseBoxH, 5.0F * scale, (headerHover || isOpen) ? argb(255, 24, 28, 40, alpha) : argb(255, 18, 21, 30, alpha));
-        Render2D.drawRoundOutline(context, boxX, boxY, boxW, baseBoxH, 5.0F * scale, 1.0F, (headerHover || isOpen) ? argb(200, 124, 58, 237, alpha) : argb(255, 30, 35, 48, alpha));
-        ModernFont.draw(context, multi.getDisplaySummary(en), boxX + 8.0F * scale, centeredTextY(boxY, baseBoxH, 10.5F * scale, ModernFont.Type.INTER_SEMIBOLD), 10.5F * scale, argb(255, 240, 245, 255, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        Render2D.drawRound(context, boxX, boxY, boxW, baseBoxH, CONTROL_RADIUS * scale, (headerHover || isOpen) ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+        Render2D.drawRoundOutline(context, boxX, boxY, boxW, baseBoxH, CONTROL_RADIUS * scale, 1.0F, (headerHover || isOpen) ? color(getAccentColor(), alpha * 0.75F) : color(UI_BORDER_SOFT, alpha));
+
+        float maxHeaderTextW = boxW - 24.0F * scale;
+        Render2D.pushScissor(boxX + 6.0F * scale, boxY, maxHeaderTextW, baseBoxH);
+        context.enableScissor((int) (boxX + 6.0F * scale), (int) boxY, (int) (boxX + 6.0F * scale + maxHeaderTextW), (int) (boxY + baseBoxH));
+        ModernFont.draw(context, multi.getDisplaySummary(en), boxX + 8.0F * scale, centeredTextY(boxY, baseBoxH, 10.0F * scale, ModernFont.Type.INTER_SEMIBOLD), 10.0F * scale, color(UI_TEXT, alpha), ModernFont.Type.INTER_SEMIBOLD);
+        context.disableScissor();
+        Render2D.popScissor();
 
         float chW = 9.0F * scale, chH = 9.0F * scale;
         float chCenterX = boxX + boxW - 12.0F * scale;
         float chCenterY = boxY + baseBoxH * 0.5F;
-        drawRotatedChevron(context, chCenterX, chCenterY, chW, chH, easeOutCubic(curAnim) * (float) Math.PI, argb(140, 148, 163, 184, alpha));
+        drawRotatedChevron(context, chCenterX, chCenterY, chW, chH, easeOutCubic(curAnim) * (float) Math.PI, color(UI_TEXT_MUTED, alpha));
 
-        float totalOptionH = multi.getAllOptions().size() * 22.0F * scale;
+        float totalOptionH = multi.getAllOptions().size() * 20.0F * scale;
         float animH = totalOptionH * easeOutCubic(curAnim);
 
         if (curAnim > 0.001F) {
-            float dropY = boxY + baseBoxH + 4.0F * scale;
-            Render2D.drawRound(context, boxX, dropY, boxW, animH, 5.0F * scale, argb(255, 16, 18, 26, alpha * curAnim));
-            Render2D.drawRoundOutline(context, boxX, dropY, boxW, animH, 5.0F * scale, 1.0F, argb(255, 36, 42, 60, alpha * curAnim));
+            float dropY = boxY + baseBoxH + 3.0F * scale;
+            Render2D.drawRound(context, boxX, dropY, boxW, animH, CONTROL_RADIUS * scale, color(UI_PANEL_ALT, alpha * curAnim));
+            Render2D.drawRoundOutline(context, boxX, dropY, boxW, animH, CONTROL_RADIUS * scale, 1.0F, color(UI_BORDER, alpha * curAnim));
 
             Render2D.pushScissor(boxX, dropY, boxW, animH);
             context.enableScissor((int) boxX, (int) dropY, (int) (boxX + boxW), (int) (dropY + animH));
@@ -2084,20 +2218,20 @@ public final class ModernClickGuiRenderer {
             float optY = dropY;
             for (String m : multi.getAllOptions()) {
                 boolean active = multi.isSelected(m);
-                boolean optHover = inside(mouseX, mouseY, boxX, optY, boxW, 22.0F * scale);
+                boolean optHover = inside(mouseX, mouseY, boxX, optY, boxW, 20.0F * scale);
                 if (active) {
-                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 20.0F * scale, 4.0F * scale, argb(40, 124, 58, 237, alpha * curAnim));
+                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 18.0F * scale, ROW_RADIUS * scale, color(UI_SURFACE_SELECTED, alpha * curAnim));
                 } else if (optHover) {
-                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 20.0F * scale, 4.0F * scale, argb(20, 255, 255, 255, alpha * curAnim));
+                    Render2D.drawRound(context, boxX + 2.0F * scale, optY + 1.0F * scale, boxW - 4.0F * scale, 18.0F * scale, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, alpha * curAnim));
                 }
 
-                ModernFont.draw(context, m, boxX + 8.0F * scale, centeredTextY(optY, 22.0F * scale, 10.5F * scale, ModernFont.Type.INTER_MEDIUM), 10.5F * scale,
-                        active ? argb(255, 192, 132, 252, alpha * curAnim) : argb(180, 203, 213, 225, alpha * curAnim), ModernFont.Type.INTER_MEDIUM);
+                ModernFont.draw(context, m, boxX + 8.0F * scale, centeredTextY(optY, 20.0F * scale, 10.0F * scale, ModernFont.Type.INTER_MEDIUM), 10.0F * scale,
+                        active ? color(getAccentColor(), alpha * curAnim) : color(UI_TEXT_SECONDARY, alpha * curAnim), ModernFont.Type.INTER_MEDIUM);
 
                 if (active) {
-                    Render2D.drawCircle(context, boxX + boxW - 12.0F * scale, optY + 11.0F * scale, 2.5F * scale, argb(255, 124, 58, 237, alpha * curAnim));
+                    Render2D.drawCircle(context, boxX + boxW - 10.0F * scale, optY + 10.0F * scale, 2.0F * scale, color(getAccentColor(), alpha * curAnim));
                 }
-                optY += 22.0F * scale;
+                optY += 20.0F * scale;
             }
 
             context.disableScissor();
@@ -2137,16 +2271,16 @@ public final class ModernClickGuiRenderer {
 
     private void drawAutoBuyPanelButton(DrawContext context, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
         boolean hover = inside(mouseX, mouseY, x, y + 2.0F * scale, w, 22.0F * scale);
-        int fill = hover ? argb(255, 109, 75, 196, alpha) : argb(235, 48, 36, 85, alpha);
-        Render2D.drawRound(context, x, y + 2.0F * scale, w, 22.0F * scale, 6.0F * scale, fill);
-        Render2D.drawRoundOutline(context, x, y + 2.0F * scale, w, 22.0F * scale, 6.0F * scale, 1.0F,
-                argb(hover ? 220 : 125, 177, 139, 255, alpha));
+        int fill = hover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha);
+        Render2D.drawRound(context, x, y + 2.0F * scale, w, 22.0F * scale, CONTROL_RADIUS * scale, fill);
+        Render2D.drawRoundOutline(context, x, y + 2.0F * scale, w, 22.0F * scale, CONTROL_RADIUS * scale, 1.0F,
+                hover ? color(UI_ACCENT, alpha * 0.8F) : color(UI_BORDER_SOFT, alpha));
         drawTexture(context, ICON_AUTOBUY, x + 8.0F * scale, y + 6.0F * scale, 14.0F * scale, 14.0F * scale,
-                argb(255, 255, 255, 255, alpha));
+                hover ? color(UI_TEXT, alpha) : color(UI_TEXT_MUTED, alpha));
         ModernFont.draw(context, t("Открыть панель покупки", "Open purchase panel"), x + 28.0F * scale,
-                y + 7.0F * scale, 9.5F * scale, argb(255, 255, 255, 255, alpha), ModernFont.Type.SF_BOLD);
+                y + 7.0F * scale, 9.5F * scale, color(UI_TEXT, alpha), ModernFont.Type.SF_BOLD);
         ModernFont.drawRight(context, ">", x + w - 10.0F * scale, y + 7.0F * scale, 10.0F * scale,
-                argb(210, 255, 255, 255, alpha), ModernFont.Type.SF_BOLD);
+                color(UI_ACCENT, alpha), ModernFont.Type.SF_BOLD);
     }
 
     private static List<String> commaList(String value) {
@@ -2156,23 +2290,23 @@ public final class ModernClickGuiRenderer {
 
     private void drawKeybindRow(DrawContext context, String name, int keyCode, boolean listening, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
         float textSize = 12.0F * scale;
-        ModernFont.draw(context, getSettingDisplayName(name), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+        ModernFont.draw(context, getSettingDisplayName(name), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
         
         String keyText = listening ? "..." : KeybindSetting.getKeyName(keyCode, isEn());
         float fontSize = 10.0F * scale;
-        float btnW = Math.max(54.0F * scale, ModernFont.getWidth(keyText, fontSize, ModernFont.Type.SF_BOLD) + 16.0F * scale);
+        float btnW = Math.max(50.0F * scale, ModernFont.getWidth(keyText, fontSize, ModernFont.Type.SF_BOLD) + 16.0F * scale);
         float btnH = 20.0F * scale, btnX = x + w - btnW, btnY = y + 2.5F * scale;
         boolean hovered = inside(mouseX, mouseY, btnX, btnY, btnW, btnH);
 
-        Render2D.drawRound(context, btnX, btnY, btnW, btnH, 5.0F * scale, listening ? argb(255, 24, 20, 36, alpha) : argb(255, 18, 21, 30, alpha));
+        Render2D.drawRound(context, btnX, btnY, btnW, btnH, CONTROL_RADIUS * scale, listening ? color(UI_SURFACE_SELECTED, alpha) : (hovered ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha)));
         if (listening) {
-            drawAnimatedDashedBorder(context, btnX, btnY, btnW, btnH, 1.0F * scale, argb(255, 192, 132, 252, alpha));
+            drawAnimatedDashedBorder(context, btnX, btnY, btnW, btnH, 1.0F * scale, color(UI_ACCENT, alpha));
         } else {
-            Render2D.drawRoundOutline(context, btnX, btnY, btnW, btnH, 5.0F * scale, 1.0F, hovered ? argb(160, 124, 58, 237, alpha) : argb(255, 30, 35, 48, alpha));
+            Render2D.drawRoundOutline(context, btnX, btnY, btnW, btnH, CONTROL_RADIUS * scale, 1.0F, hovered ? color(UI_ACCENT, alpha * 0.75F) : color(UI_BORDER_SOFT, alpha));
         }
 
         ModernFont.drawCentered(context, keyText, btnX + btnW * 0.5F, centeredTextY(btnY, btnH, fontSize, ModernFont.Type.SF_BOLD), fontSize,
-                listening ? argb(255, 216, 180, 254, alpha) : argb(255, 226, 232, 240, alpha), ModernFont.Type.SF_BOLD);
+                listening ? color(UI_ACCENT_STRONG, alpha) : color(UI_TEXT, alpha), ModernFont.Type.SF_BOLD);
     }
 
     private void drawCheckerboard(DrawContext context, float x, float y, float w, float h, float r, float alpha) {
@@ -2206,33 +2340,54 @@ public final class ModernClickGuiRenderer {
     }
 
     private void drawColorRow(DrawContext context, ColorSetting color, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
+        if (color.isSyncedWithTheme()) {
+            color.updateFromTheme();
+        }
         float textSize = 12.0F * scale;
-        ModernFont.draw(context, getSettingDisplayName(color.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+        ModernFont.draw(context, getSettingDisplayName(color.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
 
-        float btnSize = 18.0F * scale;
-        float btnY = y + (25.0F * scale - btnSize) * 0.5F;
-        float swatchX = x + w - btnSize;
-        float pipetteX = swatchX - btnSize - 4.0F * scale;
-        boolean pipetteHover = inside(mouseX, mouseY, pipetteX, btnY, btnSize, btnSize);
-        Render2D.drawRound(context, pipetteX, btnY, btnSize, btnSize, 4.0F * scale,
-        pipetteHover ? argb(255, 40, 48, 70, alpha) : argb(255, 24, 29, 44, alpha));
-        Render2D.drawRoundOutline(context, pipetteX, btnY, btnSize, btnSize, 4.0F * scale, 1.0F,
-                pipetteHover ? argb(255, 255, 255, 255, alpha) : argb(255, 42, 48, 66, alpha));
-        drawTexture(context, ICON_PIPETTE, pipetteX + 3.0F * scale, btnY + 3.0F * scale,
-                12.0F * scale, 12.0F * scale, argb(220, 168, 177, 198, alpha));
-        boolean swatchHover = inside(mouseX, mouseY, swatchX, btnY, btnSize, btnSize);
+        float swatchW = 22.0F * scale;
+        float swatchH = 15.0F * scale;
+        float btnY = y + (25.0F * scale - swatchH) * 0.5F;
+        float swatchX = x + w - swatchW;
+        boolean swatchHover = inside(mouseX, mouseY, swatchX, btnY, swatchW, swatchH);
         boolean isActive = activeColorPicker == color;
 
-        // Color square swatch with checkerboard underlay for transparency
-        drawCheckerboard(context, swatchX, btnY, btnSize, btnSize, 4.0F * scale, alpha);
-        Render2D.drawRound(context, swatchX, btnY, btnSize, btnSize, 4.0F * scale, color(color.get(), alpha));
-        Render2D.drawRoundOutline(context, swatchX, btnY, btnSize, btnSize, 4.0F * scale, 1.0F,
-                isActive ? argb(220, 124, 58, 237, alpha) : (swatchHover ? argb(255, 255, 255, 255, alpha) : argb(255, 42, 48, 66, alpha)));
+        // Color swatch: checkerboard underlay only when transparency exists
+        if (((color.get() >> 24) & 0xFF) < 255) {
+            drawCheckerboard(context, swatchX, btnY, swatchW, swatchH, ROW_RADIUS * scale, alpha);
+        }
+        Render2D.drawRound(context, swatchX, btnY, swatchW, swatchH, ROW_RADIUS * scale, color(color.get(), alpha));
+        Render2D.drawRoundOutline(context, swatchX, btnY, swatchW, swatchH, ROW_RADIUS * scale, 1.0F,
+                isActive ? color(getAccentColor(), alpha) : (swatchHover ? color(UI_TEXT_MUTED, alpha) : color(UI_BORDER_SOFT, alpha)));
+
+        if (color.isSyncedWithTheme()) {
+            float icoSize = 9.0F * scale;
+            drawTexture(context, ICON_PIPETTE, swatchX + (swatchW - icoSize) * 0.5F, btnY + (swatchH - icoSize) * 0.5F, icoSize, icoSize, argb(220, 255, 255, 255, alpha));
+        }
 
         if (isActive) {
-            pickerX = swatchX + btnSize;
+            pickerX = swatchX + swatchW;
             pickerY = btnY;
         }
+    }
+
+    private void drawActionRow(DrawContext context, ActionSetting act, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
+        float btnH = 22.0F * scale;
+        float btnY = y + 2.5F * scale;
+        boolean hover = inside(mouseX, mouseY, x, btnY, w, btnH);
+        boolean success = "sync_all_success".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1300L);
+
+        int fill = success ? color(0xFF22C55E, alpha * 0.18F) : (hover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
+        int border = success ? color(0xFF22C55E, alpha) : (hover ? color(getAccentColor(), alpha * 0.85F) : color(UI_BORDER_SOFT, alpha));
+        int textCol = success ? color(0xFF86EFAC, alpha) : (hover ? color(getAccentStrongColor(), alpha) : color(getAccentColor(), alpha));
+
+        Render2D.drawRound(context, x, btnY, w, btnH, CONTROL_RADIUS * scale, fill);
+        Render2D.drawRoundOutline(context, x, btnY, w, btnH, CONTROL_RADIUS * scale, 1.0F, border);
+
+        String text = success ? t("✓ Все цвета синхронизированы!", "✓ All colors synced!") : act.getButtonText();
+        ModernFont.drawCentered(context, text, x + w * 0.5F, centeredTextY(btnY, btnH, 10.5F * scale, ModernFont.Type.INTER_SEMIBOLD),
+                10.5F * scale, textCol, ModernFont.Type.INTER_SEMIBOLD);
     }
 
     private void drawStringRow(DrawContext context, StringSetting str, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
@@ -2250,14 +2405,14 @@ public final class ModernClickGuiRenderer {
         float boxH = 20.0F * scale, boxX = x + w - boxW, boxY = y + 2.5F * scale;
 
         if (boxX > x + 10.0F * scale) {
-            ModernFont.draw(context, getSettingDisplayName(str.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, argb(220, 226, 232, 240, alpha), ModernFont.Type.INTER_MEDIUM);
+            ModernFont.draw(context, getSettingDisplayName(str.getName()), x, centeredTextY(y, 25.0F * scale, textSize, ModernFont.Type.INTER_MEDIUM), textSize, color(UI_TEXT, alpha), ModernFont.Type.INTER_MEDIUM);
         }
 
-        Render2D.drawRound(context, boxX, boxY, boxW, boxH, 5.0F * scale, focused ? argb(255, 24, 29, 44, alpha) : argb(255, 18, 21, 30, alpha));
-        Render2D.drawRoundOutline(context, boxX, boxY, boxW, boxH, 5.0F * scale, 1.0F, focused ? argb(200, 124, 58, 237, alpha) : argb(255, 38, 45, 64, alpha));
+        Render2D.drawRound(context, boxX, boxY, boxW, boxH, CONTROL_RADIUS * scale, focused ? color(UI_SURFACE_SELECTED, alpha) : (inside(mouseX, mouseY, boxX, boxY, boxW, boxH) ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha)));
+        Render2D.drawRoundOutline(context, boxX, boxY, boxW, boxH, CONTROL_RADIUS * scale, 1.0F, focused ? color(UI_ACCENT, alpha) : color(UI_BORDER_SOFT, alpha));
 
         drawMarqueeText(context, shownText, boxX, boxY, boxW, boxH, 10.5F * scale,
-                val.isEmpty() && !focused ? argb(140, 148, 163, 184, alpha) : argb(255, 240, 245, 255, alpha), focused, scale);
+                val.isEmpty() && !focused ? color(UI_TEXT_MUTED, alpha) : color(UI_TEXT, alpha), focused, scale);
     }
 
     private void drawMarqueeText(DrawContext context, String text, float boxX, float boxY, float boxW, float boxH, float fontSize, int color, boolean focused, float scale) {
@@ -2295,22 +2450,22 @@ public final class ModernClickGuiRenderer {
                 float popY = b.boxY + 35.0F * scale;
 
                 Render2D.drawShadow(context, popX, popY, popW, popH, 12.0F * scale, 12.0F * scale, argb(220, 0, 0, 0, sortAlpha));
-                Render2D.drawRound(context, popX, popY, popW, popH, 6.0F * scale, argb(255, 18, 20, 29, sortAlpha));
-                Render2D.drawRoundOutline(context, popX, popY, popW, popH, 6.0F * scale, 1.0F, argb(255, 42, 48, 68, sortAlpha));
+                Render2D.drawRound(context, popX, popY, popW, popH, 6.0F * scale, argb(255, 10, 14, 19, sortAlpha));
+                Render2D.drawRoundOutline(context, popX, popY, popW, popH, 6.0F * scale, 1.0F, argb(255, 39, 52, 61, sortAlpha));
 
                 float itemY = popY + 4.0F * scale;
                 for (SortMode mode : SortMode.values()) {
                     boolean active = mode == sortMode;
                     boolean hover = inside(mouseX, mouseY, popX + 4.0F * scale, itemY, popW - 8.0F * scale, 21.0F * scale);
                     if (active) {
-                        Render2D.drawRound(context, popX + 4.0F * scale, itemY, popW - 8.0F * scale, 21.0F * scale, 4.0F * scale, argb(50, 124, 58, 237, sortAlpha));
+                        Render2D.drawRound(context, popX + 4.0F * scale, itemY, popW - 8.0F * scale, 21.0F * scale, 4.0F * scale, argb(52, 86, 120, 137, sortAlpha));
                     } else if (hover) {
                         Render2D.drawRound(context, popX + 4.0F * scale, itemY, popW - 8.0F * scale, 21.0F * scale, 4.0F * scale, argb(20, 255, 255, 255, sortAlpha));
                     }
                     ModernFont.draw(context, mode.label(en), popX + 8.0F * scale, itemY + 5.5F * scale, 10.5F * scale,
-                            active ? argb(255, 192, 132, 252, sortAlpha) : argb(180, 203, 213, 225, sortAlpha), ModernFont.Type.INTER_MEDIUM);
+                            active ? argb(255, 160, 194, 204, sortAlpha) : argb(190, 203, 213, 225, sortAlpha), ModernFont.Type.SF_MEDIUM);
                     if (active) {
-                        Render2D.drawCircle(context, popX + popW - 12.0F * scale, itemY + 10.5F * scale, 2.5F * scale, argb(255, 124, 58, 237, sortAlpha));
+                        Render2D.drawCircle(context, popX + popW - 12.0F * scale, itemY + 10.5F * scale, 2.5F * scale, argb(255, 86, 120, 137, sortAlpha));
                     }
                     itemY += 23.0F * scale;
                 }
@@ -2326,80 +2481,100 @@ public final class ModernClickGuiRenderer {
                     contextMenuClosing = false;
                 }
             } else {
-                contextMenuAnim = Math.min(1.0F, contextMenuAnim + dt * 7.5F);
+                contextMenuAnim = Math.min(1.0F, contextMenuAnim + dt * 10.0F);
             }
 
             if (contextMenuAnim > 0.001F && activeContextMenuModule != null) {
                 float cmAlpha = easeOutCubic(contextMenuAnim) * alpha;
                 float popW = 168.0F * scale;
-                float itemH = 25.0F * scale;
-                float popH = 5 * itemH + 8.0F * scale;
+                float itemH = 22.0F * scale;
+                float popH = 5 * itemH + 28.0F * scale;
                 
                 float screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
                 float screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
-                float popX = Math.min(screenW - popW - 10.0F * scale, contextMenuX);
-                float popY = Math.min(screenH - popH - 10.0F * scale, contextMenuY);
+                float popX = Math.max(8.0F * scale, Math.min(screenW - popW - 8.0F * scale, contextMenuX));
+                float popY = Math.max(8.0F * scale, Math.min(screenH - popH - 8.0F * scale, contextMenuY));
 
-                Render2D.drawShadow(context, popX, popY, popW, popH, 16.0F * scale, 12.0F * scale, argb(200, 0, 0, 0, cmAlpha));
-                Render2D.drawRound(context, popX, popY, popW, popH, 7.0F * scale, argb(255, 15, 17, 24, cmAlpha));
-                Render2D.drawRoundOutline(context, popX, popY, popW, popH, 7.0F * scale, 1.0F, argb(255, 32, 37, 50, cmAlpha));
-                Render2D.drawLine(context, popX + 6.0F * scale, popY + 1.0F, popX + popW - 6.0F * scale, popY + 1.0F, 1.0F, argb(20, 255, 255, 255, cmAlpha));
+                Render2D.drawShadow(context, popX, popY, popW, popH, 12.0F * scale, 8.0F * scale, argb(180, 0, 0, 0, cmAlpha));
+                Render2D.drawRound(context, popX, popY, popW, popH, 5.0F * scale, color(UI_PANEL_ALT, cmAlpha));
+                Render2D.drawRoundOutline(context, popX, popY, popW, popH, 5.0F * scale, 1.0F, color(UI_BORDER, cmAlpha));
 
-                float curItemY = popY + 4.0F * scale;
-                float iconOffY = (itemH - 16.0F * scale) * 0.5F;
+                float curItemY = popY + 26.0F * scale;
+                // Header: Module name cleanly left-aligned
+                ModernFont.draw(context, activeContextMenuModule.getName(), popX + 10.0F * scale,
+                        popY + 8.0F * scale, 11.0F * scale,
+                        color(UI_TEXT, cmAlpha), ModernFont.Type.SF_BOLD);
+                Render2D.drawLine(context, popX + 8.0F * scale, popY + 23.0F * scale,
+                        popX + popW - 8.0F * scale, popY + 23.0F * scale, 1.0F,
+                        color(UI_BORDER_SOFT, cmAlpha * 0.75F));
+
                 float menuTextSize = 10.5F * scale;
+                float menuTextOffset = -0.35F * scale;
+                float iconLeftX = popX + 10.0F * scale;
+                float iconSize = 13.0F * scale;
+                float textLeftX = popX + 30.0F * scale;
 
-                // Item 0: Pin / Unpin
+                // Item 0: Pin / Unpin (Text-first, uniform left alignment)
                 boolean isPinned = PINNED_MODULES.contains(activeContextMenuModule.getName());
                 boolean h0 = inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH);
-                if (h0) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, 4.5F * scale, argb(24, 255, 255, 255, cmAlpha));
-                drawTexture(context, ICON_PIN, Math.round(popX + 10.0F * scale), Math.round(curItemY + iconOffY), Math.round(16.0F * scale), Math.round(16.0F * scale),
-                        isPinned ? argb(255, 196, 181, 253, cmAlpha) : argb(200, 148, 163, 184, cmAlpha));
+                if (h0) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, cmAlpha));
                 
                 String pinLabel = isPinned ? t("Открепить", "Unpin") : t("Закрепить вверху", "Pin to Top");
                 if (contextMenuFeedback != null && System.currentTimeMillis() - contextMenuFeedbackTime < 1500L) {
                     if ("pinned".equals(contextMenuFeedback)) pinLabel = t("Закреплено!", "Pinned!");
                     else if ("unpinned".equals(contextMenuFeedback)) pinLabel = t("Откреплено!", "Unpinned!");
                 }
-                ModernFont.draw(context, pinLabel, popX + 30.0F * scale, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.INTER_MEDIUM), menuTextSize,
-                        isPinned ? argb(255, 196, 181, 253, cmAlpha) : argb(255, 226, 232, 240, cmAlpha), ModernFont.Type.INTER_MEDIUM);
+                int pinColor = isPinned ? color(UI_ACCENT, cmAlpha) : color(UI_TEXT, cmAlpha);
+                MsdfIcons.draw(context, MsdfIcons.Icon.PIN, iconLeftX, curItemY + (itemH - iconSize) * 0.5F, iconSize, iconSize, pinColor);
+                ModernFont.draw(context, pinLabel, textLeftX, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.SF_MEDIUM) + menuTextOffset, menuTextSize,
+                        pinColor, ModernFont.Type.SF_MEDIUM);
                 curItemY += itemH;
 
                 // Item 1: Module Description
                 boolean h1 = inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH);
-                if (h1) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, 4.5F * scale, argb(24, 255, 255, 255, cmAlpha));
-                drawTexture(context, ICON_INFO, Math.round(popX + 10.0F * scale), Math.round(curItemY + iconOffY), Math.round(16.0F * scale), Math.round(16.0F * scale), argb(220, 196, 181, 253, cmAlpha));
+                if (h1) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, cmAlpha));
                 String infoLabel = t("Описание модуля", "Module Info");
-                ModernFont.draw(context, infoLabel, popX + 30.0F * scale, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.INTER_MEDIUM), menuTextSize, argb(255, 241, 245, 249, cmAlpha), ModernFont.Type.INTER_MEDIUM);
+                int infoColor = color(UI_TEXT_SECONDARY, cmAlpha);
+                MsdfIcons.draw(context, MsdfIcons.Icon.INFO, iconLeftX, curItemY + (itemH - iconSize) * 0.5F, iconSize, iconSize, infoColor);
+                ModernFont.draw(context, infoLabel, textLeftX, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.SF_MEDIUM) + menuTextOffset, menuTextSize,
+                        infoColor, ModernFont.Type.SF_MEDIUM);
                 curItemY += itemH;
 
                 // Item 2: Copy Settings
                 boolean h2 = inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH);
-                if (h2) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, 4.5F * scale, argb(24, 255, 255, 255, cmAlpha));
-                drawTexture(context, ICON_COPY, Math.round(popX + 10.0F * scale), Math.round(curItemY + iconOffY), Math.round(16.0F * scale), Math.round(16.0F * scale), argb(200, 148, 163, 184, cmAlpha));
+                if (h2) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, cmAlpha));
                 String copyLabel = (contextMenuFeedback != null && System.currentTimeMillis() - contextMenuFeedbackTime < 1500L && "copied".equals(contextMenuFeedback))
                         ? t("Скопировано!", "Copied!") : t("Скопировать настройки", "Copy Settings");
-                ModernFont.draw(context, copyLabel, popX + 30.0F * scale, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.INTER_MEDIUM), menuTextSize,
-                        "copied".equals(contextMenuFeedback) ? argb(255, 52, 211, 153, cmAlpha) : argb(255, 226, 232, 240, cmAlpha), ModernFont.Type.INTER_MEDIUM);
+                if ("copy_failed".equals(contextMenuFeedback) && System.currentTimeMillis() - contextMenuFeedbackTime < 1500L) {
+                    copyLabel = t("Не удалось скопировать", "Copy failed");
+                }
+                int copyColor = "copied".equals(contextMenuFeedback) ? argb(255, 52, 211, 153, cmAlpha) : color(UI_TEXT_SECONDARY, cmAlpha);
+                MsdfIcons.draw(context, MsdfIcons.Icon.COPY, iconLeftX, curItemY + (itemH - iconSize) * 0.5F, iconSize, iconSize, copyColor);
+                ModernFont.draw(context, copyLabel, textLeftX, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.SF_MEDIUM) + menuTextOffset, menuTextSize,
+                        copyColor, ModernFont.Type.SF_MEDIUM);
                 curItemY += itemH;
 
                 // Item 3: Paste Settings
                 boolean h3 = inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH);
-                if (h3) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, 4.5F * scale, argb(24, 255, 255, 255, cmAlpha));
-                drawTexture(context, ICON_PASTE, Math.round(popX + 10.0F * scale), Math.round(curItemY + iconOffY), Math.round(16.0F * scale), Math.round(16.0F * scale), argb(200, 148, 163, 184, cmAlpha));
+                if (h3) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, ROW_RADIUS * scale, color(UI_SURFACE_HOVER, cmAlpha));
                 String pasteLabel = (contextMenuFeedback != null && System.currentTimeMillis() - contextMenuFeedbackTime < 1500L && "pasted".equals(contextMenuFeedback))
                         ? t("Вставлено!", "Pasted!") : t("Вставить настройки", "Paste Settings");
-                ModernFont.draw(context, pasteLabel, popX + 30.0F * scale, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.INTER_MEDIUM), menuTextSize,
-                        "pasted".equals(contextMenuFeedback) ? argb(255, 52, 211, 153, cmAlpha) : argb(255, 226, 232, 240, cmAlpha), ModernFont.Type.INTER_MEDIUM);
+                if ("paste_failed".equals(contextMenuFeedback) && System.currentTimeMillis() - contextMenuFeedbackTime < 1500L) {
+                    pasteLabel = t("Данные не подходят", "Incompatible data");
+                }
+                int pasteColor = "pasted".equals(contextMenuFeedback) ? argb(255, 52, 211, 153, cmAlpha) : color(UI_TEXT_SECONDARY, cmAlpha);
+                MsdfIcons.draw(context, MsdfIcons.Icon.PASTE, iconLeftX, curItemY + (itemH - iconSize) * 0.5F, iconSize, iconSize, pasteColor);
+                ModernFont.draw(context, pasteLabel, textLeftX, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.SF_MEDIUM) + menuTextOffset, menuTextSize,
+                        pasteColor, ModernFont.Type.SF_MEDIUM);
                 curItemY += itemH;
 
                 // Item 4: Reset to Default (with subtle separator line before destructive action)
-                Render2D.drawLine(context, popX + 8.0F * scale, curItemY - 1.5F * scale, popX + popW - 8.0F * scale, curItemY - 1.5F * scale, 1.0F, argb(20, 255, 255, 255, cmAlpha));
+                Render2D.drawLine(context, popX + 8.0F * scale, curItemY - 1.0F * scale, popX + popW - 8.0F * scale, curItemY - 1.0F * scale, 1.0F, color(UI_BORDER_SOFT, cmAlpha));
                 boolean h4 = inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH);
-                if (h4) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, 4.5F * scale, argb(26, 220, 60, 60, cmAlpha));
-                int warnColor = h4 ? argb(255, 248, 140, 140, cmAlpha) : argb(170, 220, 130, 130, cmAlpha);
-                drawTexture(context, ICON_RESET, Math.round(popX + 10.0F * scale), Math.round(curItemY + iconOffY), Math.round(16.0F * scale), Math.round(16.0F * scale), warnColor);
-                ModernFont.draw(context, t("Сбросить по умолчанию", "Reset to Default"), popX + 30.0F * scale, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.INTER_MEDIUM), menuTextSize, warnColor, ModernFont.Type.INTER_MEDIUM);
+                if (h4) Render2D.drawRound(context, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH, ROW_RADIUS * scale, color(UI_DANGER, cmAlpha * 0.12F));
+                int warnColor = color(UI_DANGER, cmAlpha * (h4 ? 1.0F : 0.8F));
+                MsdfIcons.draw(context, MsdfIcons.Icon.RESET, iconLeftX, curItemY + (itemH - iconSize) * 0.5F, iconSize, iconSize, warnColor);
+                ModernFont.draw(context, t("Сбросить по умолчанию", "Reset to Default"), textLeftX, centeredTextY(curItemY, itemH, menuTextSize, ModernFont.Type.SF_MEDIUM) + menuTextOffset, menuTextSize, warnColor, ModernFont.Type.SF_MEDIUM);
             }
         }
 
@@ -2419,8 +2594,8 @@ public final class ModernClickGuiRenderer {
                 float popAlpha = Math.min(1.0F, easeOutCubic(colorPickerAnim)) * alpha;
                 float animYOffset = (1.0F - easeOutCubic(colorPickerAnim)) * 6.0F * scale;
 
-                float pickW = 194.0F * scale;
-                float pickH = 192.0F * scale;
+                float pickW = 186.0F * scale;
+                float pickH = 160.0F * scale;
                 float screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
                 float screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
                 float px = (pickerX > 0) ? (pickerX - pickW) : (screenW - pickW) * 0.5F;
@@ -2428,157 +2603,151 @@ public final class ModernClickGuiRenderer {
                 px = Math.max(10.0F * scale, Math.min(screenW - pickW - 10.0F * scale, px));
                 py = Math.max(10.0F * scale, Math.min(screenH - pickH - 10.0F * scale, py));
 
-                Render2D.drawShadow(context, px, py, pickW, pickH, 16.0F * scale, 16.0F * scale, argb(180, 0, 0, 0, popAlpha));
-                Render2D.drawRound(context, px, py, pickW, pickH, 6.0F * scale, argb(255, 18, 21, 30, popAlpha));
-                Render2D.drawRoundOutline(context, px, py, pickW, pickH, 6.0F * scale, 1.0F, argb(255, 38, 45, 64, popAlpha));
+                Render2D.drawShadow(context, px, py, pickW, pickH, 12.0F * scale, 8.0F * scale, argb(170, 0, 0, 0, popAlpha));
+                Render2D.drawRound(context, px, py, pickW, pickH, 5.0F * scale, color(UI_PANEL_ALT, popAlpha));
+                Render2D.drawRoundOutline(context, px, py, pickW, pickH, 5.0F * scale, 1.0F, color(UI_BORDER, popAlpha));
 
-                // Header: Pipette Icon + Title & Close Button
+                // Header: Clean Left-aligned Title & Compact Close Button (no redundant pipette icon)
                 float hdrY = py + 8.0F * scale;
-                drawTexture(context, ICON_PIPETTE, px + 10.0F * scale, hdrY + 2.5F * scale, 13.0F * scale, 13.0F * scale, argb(255, 168, 85, 247, popAlpha));
                 String title = getSettingDisplayName(activeColorPicker.getName());
-                ModernFont.draw(context, title, px + 27.0F * scale, hdrY + 2.0F * scale, 11.5F * scale, argb(255, 241, 245, 249, popAlpha), ModernFont.Type.SF_BOLD);
+                ModernFont.draw(context, title, px + 10.0F * scale, hdrY + 2.0F * scale, 11.0F * scale, color(UI_TEXT, popAlpha), ModernFont.Type.SF_BOLD);
 
-                float closeSize = 16.0F * scale;
+                float closeSize = 15.0F * scale;
                 float closeX = px + pickW - closeSize - 8.0F * scale;
                 float closeY = hdrY + 1.0F * scale;
                 boolean closeHover = inside(mouseX, mouseY, closeX, closeY, closeSize, closeSize);
-                Render2D.drawRound(context, closeX, closeY, closeSize, closeSize, 3.5F * scale,
-                        closeHover ? argb(60, 239, 68, 68, popAlpha) : argb(18, 255, 255, 255, popAlpha));
+                Render2D.drawRound(context, closeX, closeY, closeSize, closeSize, 3.0F * scale,
+                        closeHover ? color(UI_DANGER, popAlpha * 0.15F) : color(UI_SURFACE, popAlpha));
                 float cx = closeX + closeSize * 0.5F, cy = closeY + closeSize * 0.5F, cr = 2.5F * scale;
-                int crossCol = closeHover ? argb(255, 252, 165, 165, popAlpha) : argb(160, 148, 163, 184, popAlpha);
+                int crossCol = closeHover ? color(UI_DANGER, popAlpha) : color(UI_TEXT_MUTED, popAlpha);
                 Render2D.drawLine(context, cx - cr, cy - cr, cx + cr, cy + cr, 1.2F * scale, crossCol);
                 Render2D.drawLine(context, cx + cr, cy - cr, cx - cr, cy + cr, 1.2F * scale, crossCol);
 
-                Render2D.drawLine(context, px + 10.0F * scale, hdrY + 18.0F * scale, px + pickW - 10.0F * scale, hdrY + 18.0F * scale, 1.0F, argb(255, 28, 33, 46, popAlpha));
-
                 // 1. SV Area
                 float svX = px + 10.0F * scale;
-                float svY = hdrY + 24.0F * scale;
+                float svY = hdrY + 20.0F * scale;
                 float svW = pickW - 20.0F * scale;
-                float svH = 64.0F * scale;
+                float svH = 58.0F * scale;
 
                 int baseHueCol = Color.HSBtoRGB(pickerHue, 1.0F, 1.0F);
-                Render2D.drawRound(context, svX, svY, svW, svH, 4.0F * scale, color(baseHueCol, popAlpha));
-                Render2D.drawGradientRoundLR(context, svX, svY, svW, svH, 4.0F * scale, color(0xFFFFFFFF, popAlpha), color(0x00FFFFFF, popAlpha));
-                Render2D.drawGradientRoundTB(context, svX, svY, svW, svH, 4.0F * scale, color(0x00000000, popAlpha), color(0xFF000000, popAlpha));
-                Render2D.drawRoundOutline(context, svX, svY, svW, svH, 4.0F * scale, 1.0F, argb(40, 255, 255, 255, popAlpha));
+                Render2D.drawRound(context, svX, svY, svW, svH, CONTROL_RADIUS * scale, color(baseHueCol, popAlpha));
+                Render2D.drawGradientRoundLR(context, svX, svY, svW, svH, CONTROL_RADIUS * scale, color(0xFFFFFFFF, popAlpha), color(0x00FFFFFF, popAlpha));
+                Render2D.drawGradientRoundTB(context, svX, svY, svW, svH, CONTROL_RADIUS * scale, color(0x00000000, popAlpha), color(0xFF000000, popAlpha));
+                Render2D.drawRoundOutline(context, svX, svY, svW, svH, CONTROL_RADIUS * scale, 1.0F, color(UI_BORDER_SOFT, popAlpha));
 
                 // SV Knob
-                float svKnobInset = 4.0F * scale;
+                float svKnobInset = 3.5F * scale;
                 float cursorX = svX + svKnobInset + (svW - svKnobInset * 2.0F) * pickerSat;
                 float cursorY = svY + svKnobInset + (svH - svKnobInset * 2.0F) * (1.0F - pickerBri);
-                Render2D.drawCircle(context, cursorX, cursorY, 4.0F * scale, argb(255, 255, 255, 255, popAlpha));
-                Render2D.drawCircle(context, cursorX, cursorY, 2.8F * scale, color(0xFF000000 | Color.HSBtoRGB(pickerHue, pickerSat, pickerBri), popAlpha));
-                Render2D.drawCircleOutline(context, cursorX, cursorY, 4.0F * scale, 1.0F, argb(120, 0, 0, 0, popAlpha));
+                Render2D.drawCircle(context, cursorX, cursorY, 3.5F * scale, argb(255, 255, 255, 255, popAlpha));
+                Render2D.drawCircle(context, cursorX, cursorY, 2.3F * scale, color(0xFF000000 | Color.HSBtoRGB(pickerHue, pickerSat, pickerBri), popAlpha));
+                Render2D.drawCircleOutline(context, cursorX, cursorY, 3.5F * scale, 1.0F, argb(120, 0, 0, 0, popAlpha));
 
-                // 2. Hue Bar
-                float hueY = svY + svH + 8.0F * scale;
-                float hueH = 7.0F * scale;
-                drawSeamlessHueBar(context, svX, hueY, svW, hueH, 3.5F * scale, popAlpha);
+                // 2. Hue Bar (Thin 5px track, compact 3.5px knob)
+                float hueY = svY + svH + 7.0F * scale;
+                float hueH = 5.0F * scale;
+                drawSeamlessHueBar(context, svX, hueY, svW, hueH, 2.5F * scale, popAlpha);
 
                 // Hue Knob
-                float hueKnobInset = 4.0F * scale;
+                float hueKnobInset = 3.5F * scale;
                 float hueKnobX = svX + hueKnobInset + (svW - hueKnobInset * 2.0F) * pickerHue;
                 float hueKnobY = hueY + hueH * 0.5F;
-                float knobR = 4.5F * scale;
+                float knobR = 3.5F * scale;
                 Render2D.drawCircle(context, hueKnobX, hueKnobY, knobR, argb(255, 255, 255, 255, popAlpha));
-                Render2D.drawCircle(context, hueKnobX, hueKnobY, 3.0F * scale, color(0xFF000000 | Color.HSBtoRGB(pickerHue, 1.0F, 1.0F), popAlpha));
+                Render2D.drawCircle(context, hueKnobX, hueKnobY, 2.2F * scale, color(0xFF000000 | Color.HSBtoRGB(pickerHue, 1.0F, 1.0F), popAlpha));
                 Render2D.drawCircleOutline(context, hueKnobX, hueKnobY, knobR, 1.0F, argb(100, 0, 0, 0, popAlpha));
 
                 // 3. Opacity Row
-                float opacityLabelY = hueY + hueH + 10.0F * scale;
-                float opacTextSize = 10.0F * scale;
-                ModernFont.draw(context, t("Прозрачность", "Opacity"), svX, opacityLabelY, opacTextSize, argb(200, 148, 163, 184, popAlpha), ModernFont.Type.INTER_MEDIUM);
+                float opacityLabelY = hueY + hueH + 7.0F * scale;
+                float opacTextSize = 9.5F * scale;
+                ModernFont.draw(context, t("Прозрачность", "Opacity"), svX, opacityLabelY, opacTextSize, color(UI_TEXT_MUTED, popAlpha), ModernFont.Type.INTER_MEDIUM);
                 String pctText = Math.round(pickerAlpha * 100.0F) + "%";
-                ModernFont.drawRight(context, pctText, svX + svW, opacityLabelY, opacTextSize, argb(255, 203, 213, 225, popAlpha), ModernFont.Type.SF_BOLD);
+                ModernFont.drawRight(context, pctText, svX + svW, opacityLabelY, opacTextSize, color(UI_TEXT_SECONDARY, popAlpha), ModernFont.Type.SF_BOLD);
 
-                // Alpha Slider
-                float alphaBarY = opacityLabelY + 16.0F * scale;
-                float alphaBarH = 8.0F * scale;
-                drawCheckerboard(context, svX, alphaBarY, svW, alphaBarH, 4.0F * scale, popAlpha);
+                // Alpha Slider (Thin 5px track, compact 3.5px knob)
+                float alphaBarY = opacityLabelY + 13.0F * scale;
+                float alphaBarH = 5.0F * scale;
+                Render2D.drawRound(context, svX, alphaBarY, svW, alphaBarH, 2.5F * scale, color(UI_SURFACE, popAlpha));
                 int rgbNoA = Color.HSBtoRGB(pickerHue, pickerSat, pickerBri) & 0x00FFFFFF;
-                Render2D.drawGradientRoundLR(context, svX, alphaBarY, svW, alphaBarH, 4.0F * scale, color(rgbNoA, 0.0F), color(0xFF000000 | rgbNoA, popAlpha));
-                Render2D.drawRoundOutline(context, svX, alphaBarY, svW, alphaBarH, 4.0F * scale, 1.0F, argb(60, 255, 255, 255, popAlpha));
+                Render2D.drawGradientRoundLR(context, svX, alphaBarY, svW, alphaBarH, 2.5F * scale, color(rgbNoA, 0.0F), color(0xFF000000 | rgbNoA, popAlpha));
+                Render2D.drawRoundOutline(context, svX, alphaBarY, svW, alphaBarH, 2.5F * scale, 1.0F, color(UI_BORDER_SOFT, popAlpha));
 
                 // Alpha Knob
-                float alphaKnobInset = 4.0F * scale;
+                float alphaKnobInset = 3.5F * scale;
                 float alphaKnobX = svX + alphaKnobInset + (svW - alphaKnobInset * 2.0F) * pickerAlpha;
                 float alphaKnobY = alphaBarY + alphaBarH * 0.5F;
                 Render2D.drawCircle(context, alphaKnobX, alphaKnobY, knobR, argb(255, 255, 255, 255, popAlpha));
-                Render2D.drawCircle(context, alphaKnobX, alphaKnobY, 3.0F * scale, color(activeColorPicker.get(), popAlpha));
+                Render2D.drawCircle(context, alphaKnobX, alphaKnobY, 2.2F * scale, color(activeColorPicker.get(), popAlpha));
                 Render2D.drawCircleOutline(context, alphaKnobX, alphaKnobY, knobR, 1.0F, argb(100, 0, 0, 0, popAlpha));
 
-                // 4. Compact Control Row: [Preview] [HEX Input] [Paste Icon] [Copy Icon]
-                float hexRowY = alphaBarY + alphaBarH + 12.0F * scale;
-                float hexRowH = 22.0F * scale;
-                float prevW = 22.0F * scale;
-
-                // Live Color Preview with checkerboard
-                drawCheckerboard(context, svX, hexRowY, prevW, hexRowH, 4.0F * scale, popAlpha);
-                Render2D.drawRound(context, svX, hexRowY, prevW, hexRowH, 4.0F * scale, color(activeColorPicker.get(), popAlpha));
-                Render2D.drawRoundOutline(context, svX, hexRowY, prevW, hexRowH, 4.0F * scale, 1.0F, argb(80, 255, 255, 255, popAlpha));
-
-                // Icon buttons dimensions
-                float iconBtnSize = 22.0F * scale;
+                // 4. Compact Control Row: [Preview] [HEX Input] [Theme Sync Pipette] [Copy Icon]
+                float hexRowY = alphaBarY + alphaBarH + 9.0F * scale;
+                float hexRowH = 20.0F * scale;
+                float prevW = 20.0F * scale;
+                float iconBtnSize = 20.0F * scale;
                 float copyBtnX = svX + svW - iconBtnSize;
-                float pasteBtnX = copyBtnX - iconBtnSize - 4.0F * scale;
+                float syncBtnX = copyBtnX - iconBtnSize - 4.0F * scale;
+
+                // Live Color Preview with checkerboard ONLY when alpha < 255
+                if (((activeColorPicker.get() >> 24) & 0xFF) < 255) {
+                    drawCheckerboard(context, svX, hexRowY, prevW, hexRowH, ROW_RADIUS * scale, popAlpha);
+                }
+                Render2D.drawRound(context, svX, hexRowY, prevW, hexRowH, ROW_RADIUS * scale, color(activeColorPicker.get(), popAlpha));
+                Render2D.drawRoundOutline(context, svX, hexRowY, prevW, hexRowH, ROW_RADIUS * scale, 1.0F, color(UI_BORDER, popAlpha));
 
                 // Clean HEX Input Box
                 float hexBoxX = svX + prevW + 5.0F * scale;
-                float hexBoxW = pasteBtnX - 5.0F * scale - hexBoxX;
+                float hexBoxW = syncBtnX - 5.0F * scale - hexBoxX;
                 boolean hexHover = inside(mouseX, mouseY, hexBoxX, hexRowY, hexBoxW, hexRowH);
-                Render2D.drawRound(context, hexBoxX, hexRowY, hexBoxW, hexRowH, 4.0F * scale,
-                        hexFocused ? argb(255, 28, 34, 52, popAlpha) : (hexHover ? argb(255, 24, 29, 44, popAlpha) : argb(255, 19, 23, 34, popAlpha)));
-                Render2D.drawRoundOutline(context, hexBoxX, hexRowY, hexBoxW, hexRowH, 4.0F * scale, 1.0F,
-                        hexFocused ? argb(200, 124, 58, 237, popAlpha) : argb(255, 38, 45, 64, popAlpha));
+                Render2D.drawRound(context, hexBoxX, hexRowY, hexBoxW, hexRowH, ROW_RADIUS * scale,
+                        hexFocused ? color(UI_SURFACE_SELECTED, popAlpha) : (hexHover ? color(UI_SURFACE_HOVER, popAlpha) : color(UI_SURFACE, popAlpha)));
+                Render2D.drawRoundOutline(context, hexBoxX, hexRowY, hexBoxW, hexRowH, ROW_RADIUS * scale, 1.0F,
+                        hexFocused ? color(getAccentColor(), popAlpha) : (hexHover ? color(UI_BORDER, popAlpha) : color(UI_BORDER_SOFT, popAlpha)));
 
                 String displayHex = hexFocused ? ("#" + hexBuffer + (System.currentTimeMillis() % 1000L < 500L ? "|" : ""))
                         : ((((activeColorPicker.get() >> 24) & 0xFF) == 255)
                             ? String.format("#%06X", activeColorPicker.get() & 0xFFFFFF)
                             : String.format("#%08X", activeColorPicker.get()));
-                ModernFont.drawCentered(context, displayHex, hexBoxX + hexBoxW * 0.5F, centeredTextY(hexRowY, hexRowH, 9.5F * scale, ModernFont.Type.SF_BOLD),
-                        9.5F * scale, argb(255, 226, 232, 240, popAlpha), ModernFont.Type.SF_BOLD);
+                ModernFont.drawCentered(context, displayHex, hexBoxX + hexBoxW * 0.5F, centeredTextY(hexRowY, hexRowH, 9.0F * scale, ModernFont.Type.SF_BOLD),
+                        9.0F * scale, color(UI_TEXT, popAlpha), ModernFont.Type.SF_BOLD);
 
                 // Feedback status
-                boolean isPasteSuccess = "paste_success".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1100L);
-                boolean isPasteError = "paste_error".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1100L);
                 boolean isCopySuccess = "copy_success".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1100L);
+                boolean isSyncSuccess = "sync_success".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1100L);
 
-                // Paste Icon Button [ 📋 ]
-                boolean pasteHover = inside(mouseX, mouseY, pasteBtnX, hexRowY, iconBtnSize, iconBtnSize);
-                int pasteBg = isPasteSuccess ? argb(60, 34, 197, 94, popAlpha)
-                        : (isPasteError ? argb(60, 239, 68, 68, popAlpha)
-                        : (pasteHover ? argb(255, 30, 36, 52, popAlpha) : argb(255, 20, 24, 34, popAlpha)));
-                int pasteBorder = isPasteSuccess ? argb(220, 34, 197, 94, popAlpha)
-                        : (isPasteError ? argb(220, 239, 68, 68, popAlpha)
-                        : (pasteHover ? argb(160, 124, 58, 237, popAlpha) : argb(255, 38, 45, 64, popAlpha)));
-                int pasteIconCol = isPasteSuccess ? argb(255, 134, 239, 172, popAlpha)
-                        : (isPasteError ? argb(255, 252, 165, 165, popAlpha)
-                        : (pasteHover ? argb(255, 255, 255, 255, popAlpha) : argb(200, 203, 213, 225, popAlpha)));
+                // Theme Sync Pipette Button [ 💧 ]
+                boolean isSynced = activeColorPicker.isSyncedWithTheme();
+                boolean syncHover = inside(mouseX, mouseY, syncBtnX, hexRowY, iconBtnSize, iconBtnSize);
+                int syncBg = (isSynced || isSyncSuccess) ? color(getAccentColor(), popAlpha * 0.22F)
+                        : (syncHover ? color(UI_SURFACE_HOVER, popAlpha) : color(UI_SURFACE, popAlpha));
+                int syncBorder = (isSynced || isSyncSuccess) ? color(getAccentColor(), popAlpha)
+                        : (syncHover ? color(getAccentColor(), popAlpha * 0.7F) : color(UI_BORDER_SOFT, popAlpha));
+                int syncIconCol = (isSynced || isSyncSuccess) ? color(getAccentStrongColor(), popAlpha)
+                        : (syncHover ? color(UI_TEXT, popAlpha) : color(UI_TEXT_MUTED, popAlpha));
 
-                Render2D.drawRound(context, pasteBtnX, hexRowY, iconBtnSize, iconBtnSize, 4.0F * scale, pasteBg);
-                Render2D.drawRoundOutline(context, pasteBtnX, hexRowY, iconBtnSize, iconBtnSize, 4.0F * scale, 1.0F, pasteBorder);
-                drawTexture(context, ICON_PASTE, pasteBtnX + 5.0F * scale, hexRowY + 5.0F * scale, 12.0F * scale, 12.0F * scale, pasteIconCol);
+                Render2D.drawRound(context, syncBtnX, hexRowY, iconBtnSize, iconBtnSize, ROW_RADIUS * scale, syncBg);
+                Render2D.drawRoundOutline(context, syncBtnX, hexRowY, iconBtnSize, iconBtnSize, ROW_RADIUS * scale, 1.0F, syncBorder);
+                drawTexture(context, ICON_PIPETTE, syncBtnX + 4.5F * scale, hexRowY + 4.5F * scale, 11.0F * scale, 11.0F * scale, syncIconCol);
 
                 // Copy Icon Button [ 📄 ]
                 boolean copyHover = inside(mouseX, mouseY, copyBtnX, hexRowY, iconBtnSize, iconBtnSize);
-                int copyBg = isCopySuccess ? argb(60, 34, 197, 94, popAlpha)
-                        : (copyHover ? argb(255, 30, 36, 52, popAlpha) : argb(255, 20, 24, 34, popAlpha));
-                int copyBorder = isCopySuccess ? argb(220, 34, 197, 94, popAlpha)
-                        : (copyHover ? argb(160, 124, 58, 237, popAlpha) : argb(255, 38, 45, 64, popAlpha));
-                int copyIconCol = isCopySuccess ? argb(255, 134, 239, 172, popAlpha)
-                        : (copyHover ? argb(255, 255, 255, 255, popAlpha) : argb(200, 203, 213, 225, popAlpha));
+                int copyBg = isCopySuccess ? color(0xFF22C55E, popAlpha * 0.2F)
+                        : (copyHover ? color(UI_SURFACE_HOVER, popAlpha) : color(UI_SURFACE, popAlpha));
+                int copyBorder = isCopySuccess ? color(0xFF22C55E, popAlpha)
+                        : (copyHover ? color(getAccentColor(), popAlpha * 0.7F) : color(UI_BORDER_SOFT, popAlpha));
+                int copyIconCol = isCopySuccess ? color(0xFF86EFAC, popAlpha)
+                        : (copyHover ? color(UI_TEXT, popAlpha) : color(UI_TEXT_MUTED, popAlpha));
 
-                Render2D.drawRound(context, copyBtnX, hexRowY, iconBtnSize, iconBtnSize, 4.0F * scale, copyBg);
-                Render2D.drawRoundOutline(context, copyBtnX, hexRowY, iconBtnSize, iconBtnSize, 4.0F * scale, 1.0F, copyBorder);
-                drawTexture(context, ICON_COPY, copyBtnX + 5.0F * scale, hexRowY + 5.0F * scale, 12.0F * scale, 12.0F * scale, copyIconCol);
+                Render2D.drawRound(context, copyBtnX, hexRowY, iconBtnSize, iconBtnSize, ROW_RADIUS * scale, copyBg);
+                Render2D.drawRoundOutline(context, copyBtnX, hexRowY, iconBtnSize, iconBtnSize, ROW_RADIUS * scale, 1.0F, copyBorder);
+                drawTexture(context, ICON_COPY, copyBtnX + 4.5F * scale, hexRowY + 4.5F * scale, 11.0F * scale, 11.0F * scale, copyIconCol);
 
                 if (pipetteActive) {
                     float curX = (float) mouseX + 10.0F * scale;
                     float curY = (float) mouseY + 10.0F * scale;
-                    Render2D.drawRound(context, curX, curY, 20.0F * scale, 20.0F * scale, 4.0F * scale, argb(230, 18, 21, 30, popAlpha));
-                    Render2D.drawRoundOutline(context, curX, curY, 20.0F * scale, 20.0F * scale, 4.0F * scale, 1.0F, argb(255, 34, 197, 94, popAlpha));
-                    drawTexture(context, ICON_PIPETTE, curX + 4.0F * scale, curY + 4.0F * scale, 12.0F * scale, 12.0F * scale, argb(255, 134, 239, 172, popAlpha));
+                    Render2D.drawRound(context, curX, curY, 20.0F * scale, 20.0F * scale, ROW_RADIUS * scale, color(UI_PANEL, popAlpha));
+                    Render2D.drawRoundOutline(context, curX, curY, 20.0F * scale, 20.0F * scale, ROW_RADIUS * scale, 1.0F, color(UI_ACCENT, popAlpha));
+                    drawTexture(context, ICON_PIPETTE, curX + 4.0F * scale, curY + 4.0F * scale, 12.0F * scale, 12.0F * scale, color(UI_ACCENT_STRONG, popAlpha));
                 }
             }
         }
@@ -2587,8 +2756,6 @@ public final class ModernClickGuiRenderer {
         if (unrollingInfoModule != null) {
             long totalDuration = 7000L;
             long elapsed = System.currentTimeMillis() - unrollStartTime;
-            float progress = Math.max(0.0F, Math.min(1.0F, 1.0F - ((float) elapsed / (float) totalDuration)));
-
             if (unrollClosing) {
                 unrollAnim = Math.max(0.0F, unrollAnim - dt * 6.0F);
                 if (unrollAnim <= 0.001F) {
@@ -2616,36 +2783,31 @@ public final class ModernClickGuiRenderer {
                 }
                 String title = unrollingInfoModule.getName();
                 float titleW = ModernFont.getWidth(title, 12.5F * scale, ModernFont.Type.SF_BOLD);
-                float badgeW = ModernFont.getBadgeWidth(t("ОПИСАНИЕ", "OVERVIEW"), 0xFF312E81, 0xFFE0E7FF, Math.round(13.0F * scale));
-                float headerReqW = 44.0F * scale + titleW + 16.0F * scale + badgeW + 36.0F * scale;
-                float contentReqW = Math.max(headerReqW, maxTextWidth + 36.0F * scale);
+                float headerReqW = titleW + 52.0F * scale;
+                float contentReqW = Math.max(headerReqW, maxTextWidth + 24.0F * scale);
                 float bannerW = Math.max(280.0F * scale, Math.min(b.w - 32.0F * scale, contentReqW));
                 float bannerX = b.x + (b.w - bannerW) * 0.5F;
                 
-                float targetH = 46.0F * scale + descLines.size() * (14.5F * scale) + 6.0F * scale;
+                float targetH = 36.0F * scale + descLines.size() * (14.5F * scale) + 8.0F * scale;
                 
                 // Unrolling dynamic scroll effect (expanding height with elastic spring)
-                float curH = targetH * easeOutBack(unrollAnim);
+                float curH = targetH * easeOutCubic(unrollAnim);
                 float bannerY = b.y - curH - 8.0F * scale;
                 if (bannerY < 6.0F * scale) {
                     bannerY = 6.0F * scale;
                 }
 
                 // Strict dark obsidian card with subtle shadow and clean 1px border
-                Render2D.drawShadow(context, bannerX, bannerY, bannerW, curH, 14.0F * scale, 10.0F * scale, argb(180, 0, 0, 0, bannerAlpha));
-                Render2D.drawRound(context, bannerX, bannerY, bannerW, curH, 6.0F * scale, argb(253, 15, 17, 24, bannerAlpha));
-                Render2D.drawRoundOutline(context, bannerX, bannerY, bannerW, curH, 6.0F * scale, 1.0F, argb(255, 32, 37, 50, bannerAlpha));
+                Render2D.drawShadow(context, bannerX, bannerY, bannerW, curH, 12.0F * scale, 9.0F * scale, argb(170, 0, 0, 0, bannerAlpha));
+                Render2D.drawRound(context, bannerX, bannerY, bannerW, curH, 5.5F * scale, color(UI_PANEL_ALT, bannerAlpha));
+                Render2D.drawRoundOutline(context, bannerX, bannerY, bannerW, curH, 5.5F * scale, 1.0F, color(UI_BORDER, bannerAlpha));
 
                 Render2D.pushScissor(bannerX, bannerY, bannerW, curH);
                 context.enableScissor((int) bannerX, (int) bannerY, (int) (bannerX + bannerW), (int) (bannerY + curH));
 
                 // Header
                 float hdrY = bannerY + 8.0F * scale;
-                float iconSize = 14.0F * scale;
-                drawTexture(context, ICON_INFO, Math.round(bannerX + 12.0F * scale), Math.round(hdrY + 1.0F * scale), Math.round(iconSize), Math.round(iconSize), argb(220, 196, 181, 253, bannerAlpha));
-
-                ModernFont.draw(context, title, bannerX + 32.0F * scale, hdrY + 1.5F * scale, 12.5F * scale, argb(255, 255, 255, 255, bannerAlpha), ModernFont.Type.SF_BOLD);
-                ModernFont.drawBadge(context, t("ОПИСАНИЕ", "OVERVIEW"), bannerX + 46.0F * scale + titleW, hdrY + 1.5F * scale, 0xFF312E81, 0xFFE0E7FF, Math.round(13.0F * scale), bannerAlpha);
+                ModernFont.draw(context, title, bannerX + 12.0F * scale, hdrY + 1.5F * scale, 12.0F * scale, color(UI_TEXT, bannerAlpha), ModernFont.Type.SF_BOLD);
 
                 // Close (X) button
                 float closeBtnW = 16.0F * scale, closeBtnH = 16.0F * scale;
@@ -2658,25 +2820,13 @@ public final class ModernClickGuiRenderer {
                 Render2D.drawLine(context, cx - cr, cy - cr, cx + cr, cy + cr, 1.0F * scale, crossCol);
                 Render2D.drawLine(context, cx + cr, cy - cr, cx - cr, cy + cr, 1.0F * scale, crossCol);
 
-                // Separator line
-                Render2D.drawLine(context, bannerX + 10.0F * scale, hdrY + 18.0F * scale, bannerX + bannerW - 10.0F * scale, hdrY + 18.0F * scale, 1.0F, argb(255, 26, 29, 39, bannerAlpha));
-
                 // Description lines
-                float textY = hdrY + 24.0F * scale;
+                float textY = hdrY + 23.0F * scale;
                 for (String line : descLines) {
                     if (textY + 10.0F * scale <= bannerY + curH) {
                         ModernFont.draw(context, line, bannerX + 12.0F * scale, textY, 11.0F * scale, argb(230, 226, 232, 240, bannerAlpha), ModernFont.Type.INTER_MEDIUM);
                         textY += 14.5F * scale;
                     }
-                }
-
-                // 2px Progress bar timeline at bottom
-                float barH = 2.0F * scale;
-                float barW = (bannerW - 4.0F * scale) * progress;
-                float barX = bannerX + 2.0F * scale;
-                float barY = bannerY + targetH - barH - 2.0F * scale;
-                if (barW > 1.0F && barY <= bannerY + curH) {
-                    Render2D.drawRound(context, barX, barY, barW, barH, 1.0F * scale, argb(255, 139, 92, 246, bannerAlpha));
                 }
 
                 context.disableScissor();
@@ -2706,30 +2856,30 @@ public final class ModernClickGuiRenderer {
         cur = cur + ((active ? 1.0F : 0.0F) - cur) * Math.min(1.0F, dt * 16.0F);
         toggleAnims.put(id, cur);
 
-        if (cur > 0.05F) {
-            Render2D.drawShadow(context, x, y, w, h, 2.5F * scale, 1.5F * scale, argb(Math.round(35 * cur), 124, 58, 237, alpha));
-        }
+        float visualY = y + 1.0F * scale;
+        float visualH = h - 2.0F * scale;
+        float r = visualH * 0.5F;
 
-        // Controlled purple accent (#7C3AED to #6D28D9) / Refined matte graphite when off
-        int offCol = argb(255, 22, 25, 34, alpha);
-        int onColL = argb(255, 124, 58, 237, alpha);
-        int onColR = argb(255, 109, 40, 217, alpha);
-        
-        int curColL = mixColor(offCol, onColL, cur);
-        int curColR = mixColor(offCol, onColR, cur);
+        int trackOff = color(UI_SURFACE, alpha);
+        int trackOn = color(mixColor(0xFF0F141A, getAccentColor(), 0.28F), alpha);
+        int trackBorderOff = color(UI_BORDER_SOFT, alpha);
+        int trackBorderOn = color(getAccentColor(), alpha * 0.85F);
 
-        Render2D.drawGradientRoundLR(context, x, y, w, h, h * 0.5F, curColL, curColR);
-        Render2D.drawRoundOutline(context, x, y, w, h, h * 0.5F, 1.0F, cur > 0.05F ? argb(Math.round(100 * cur), 139, 92, 246, alpha) : argb(255, 36, 41, 56, alpha));
-        Render2D.drawLine(context, x + 3.0F * scale, y + 1.0F, x + w - 3.0F * scale, y + 1.0F, 1.0F, argb(20, 255, 255, 255, alpha));
+        int curTrack = mixColor(trackOff, trackOn, cur);
+        int curBorder = mixColor(trackBorderOff, trackBorderOn, cur);
 
-        // Smooth centered knob with subtle micro-depth and responsive state transition
-        float knobR = (h - 4.0F * scale) * 0.5F;
-        float knobX = x + 2.0F * scale + (w - h) * cur + knobR;
-        float knobY = y + 2.0F * scale + knobR;
-        int knobColOff = argb(255, 148, 163, 184, alpha);
-        int knobColOn = argb(255, 255, 255, 255, alpha);
+        Render2D.drawRound(context, x, visualY, w, visualH, r, curTrack);
+        Render2D.drawRoundOutline(context, x, visualY, w, visualH, r, 1.0F, curBorder);
+
+        float knobR = (visualH - 3.0F * scale) * 0.5F;
+        float travel = w - (knobR * 2.0F) - 3.0F * scale;
+        float knobX = x + 1.5F * scale + knobR + travel * cur;
+        float knobY = visualY + 1.5F * scale + knobR;
+
+        int knobColOff = color(UI_TEXT_MUTED, alpha);
+        int knobColOn = color(UI_TEXT, alpha);
         int curKnobCol = mixColor(knobColOff, knobColOn, cur);
-        Render2D.drawCircle(context, knobX, knobY + 0.5F * scale, knobR, argb(60, 0, 0, 0, alpha));
+
         Render2D.drawCircle(context, knobX, knobY, knobR, curKnobCol);
     }
 
@@ -2909,12 +3059,11 @@ public final class ModernClickGuiRenderer {
             }
             String title = unrollingInfoModule.getName();
             float titleW = ModernFont.getWidth(title, 12.5F * scale, ModernFont.Type.SF_BOLD);
-            float badgeW = ModernFont.getBadgeWidth(t("ОПИСАНИЕ", "OVERVIEW"), 0xFF312E81, 0xFFE0E7FF, Math.round(13.0F * scale));
-            float headerReqW = 44.0F * scale + titleW + 16.0F * scale + badgeW + 36.0F * scale;
-            float contentReqW = Math.max(headerReqW, maxTextWidth + 36.0F * scale);
+            float headerReqW = titleW + 52.0F * scale;
+            float contentReqW = Math.max(headerReqW, maxTextWidth + 24.0F * scale);
             float bannerW = Math.max(280.0F * scale, Math.min(b.w - 32.0F * scale, contentReqW));
             float bannerX = b.x + (b.w - bannerW) * 0.5F;
-            float targetH = 46.0F * scale + descLines.size() * (14.5F * scale) + 6.0F * scale;
+            float targetH = 36.0F * scale + descLines.size() * (14.5F * scale) + 8.0F * scale;
             float bannerY = Math.max(6.0F * scale, b.y - targetH - 8.0F * scale);
 
             if (inside(mouseX, mouseY, bannerX, bannerY, bannerW, targetH)) {
@@ -2924,18 +3073,20 @@ public final class ModernClickGuiRenderer {
         }
 
         // 3-Dots Context Menu Item Clicks
-        if (activeContextMenuModule != null && !contextMenuClosing) {
+        if (activeContextMenuModule != null) {
+            if (contextMenuClosing) return true;
             float popW = 168.0F * scale;
-            float itemH = 25.0F * scale;
-            float popH = 5 * itemH + 8.0F * scale;
+            float itemH = 22.0F * scale;
+            float popH = 5 * itemH + 28.0F * scale;
             float screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
             float screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
-            float popX = Math.min(screenW - popW - 10.0F * scale, contextMenuX);
-            float popY = Math.min(screenH - popH - 10.0F * scale, contextMenuY);
+            float popX = Math.max(8.0F * scale, Math.min(screenW - popW - 8.0F * scale, contextMenuX));
+            float popY = Math.max(8.0F * scale, Math.min(screenH - popH - 8.0F * scale, contextMenuY));
 
             if (inside(mouseX, mouseY, popX, popY, popW, popH)) {
-                float curItemY = popY + 4.0F * scale;
+                float curItemY = popY + 26.0F * scale;
 
+                if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
                 // Click 0: Pin / Unpin
                 if (inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH)) {
                     if (PINNED_MODULES.contains(activeContextMenuModule.getName())) {
@@ -2963,8 +3114,7 @@ public final class ModernClickGuiRenderer {
 
                 // Click 2: Copy settings
                 if (inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH)) {
-                    copyModuleSettings(activeContextMenuModule);
-                    contextMenuFeedback = "copied";
+                    contextMenuFeedback = copyModuleSettings(activeContextMenuModule) ? "copied" : "copy_failed";
                     contextMenuFeedbackTime = System.currentTimeMillis();
                     return true;
                 }
@@ -2972,8 +3122,7 @@ public final class ModernClickGuiRenderer {
 
                 // Click 3: Paste settings
                 if (inside(mouseX, mouseY, popX + 4.0F * scale, curItemY, popW - 8.0F * scale, itemH)) {
-                    pasteModuleSettings(activeContextMenuModule);
-                    contextMenuFeedback = "pasted";
+                    contextMenuFeedback = pasteModuleSettings(activeContextMenuModule) ? "pasted" : "paste_failed";
                     contextMenuFeedbackTime = System.currentTimeMillis();
                     return true;
                 }
@@ -2988,6 +3137,7 @@ public final class ModernClickGuiRenderer {
                 return true;
             } else {
                 contextMenuClosing = true;
+                return true;
             }
         }
 
@@ -3010,12 +3160,13 @@ public final class ModernClickGuiRenderer {
                 return true;
             } else {
                 sortDropdownOpen = false;
+                return true;
             }
         }
 
         if (activeColorPicker != null && !colorPickerClosing) {
-            float pickW = 194.0F * scale;
-            float pickH = 192.0F * scale;
+            float pickW = 186.0F * scale;
+            float pickH = 160.0F * scale;
             float screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
             float screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
             float px = (pickerX > 0) ? (pickerX - pickW) : (screenW - pickW) * 0.5F;
@@ -3025,7 +3176,7 @@ public final class ModernClickGuiRenderer {
 
             if (inside(mouseX, mouseY, px, py, pickW, pickH)) {
                 float hdrY = py + 8.0F * scale;
-                float closeSize = 16.0F * scale;
+                float closeSize = 15.0F * scale;
                 float closeX = px + pickW - closeSize - 8.0F * scale;
                 float closeY = hdrY + 1.0F * scale;
                 if (inside(mouseX, mouseY, closeX, closeY, closeSize, closeSize)) {
@@ -3035,41 +3186,44 @@ public final class ModernClickGuiRenderer {
                 }
 
                 float svX = px + 10.0F * scale;
-                float svY = hdrY + 24.0F * scale;
+                float svY = hdrY + 20.0F * scale;
                 float svW = pickW - 20.0F * scale;
-                float svH = 64.0F * scale;
-                float hueY = svY + svH + 8.0F * scale, hueH = 7.0F * scale;
-                float opacityLabelY = hueY + hueH + 10.0F * scale;
-                float alphaBarY = opacityLabelY + 16.0F * scale, alphaBarH = 8.0F * scale;
-                float hexRowY = alphaBarY + alphaBarH + 12.0F * scale, hexRowH = 22.0F * scale;
-                float prevW = 22.0F * scale;
-                float iconBtnSize = 22.0F * scale;
+                float svH = 58.0F * scale;
+                float hueY = svY + svH + 7.0F * scale, hueH = 5.0F * scale;
+                float opacityLabelY = hueY + hueH + 7.0F * scale;
+                float alphaBarY = opacityLabelY + 13.0F * scale, alphaBarH = 5.0F * scale;
+                float hexRowY = alphaBarY + alphaBarH + 9.0F * scale, hexRowH = 20.0F * scale;
+                float prevW = 20.0F * scale;
+                float iconBtnSize = 20.0F * scale;
                 float copyBtnX = svX + svW - iconBtnSize;
-                float pasteBtnX = copyBtnX - iconBtnSize - 4.0F * scale;
+                float syncBtnX = copyBtnX - iconBtnSize - 4.0F * scale;
                 float hexBoxX = svX + prevW + 5.0F * scale;
-                float hexBoxW = pasteBtnX - 5.0F * scale - hexBoxX;
+                float hexBoxW = syncBtnX - 5.0F * scale - hexBoxX;
 
-                float svKnobInset = 4.0F * scale;
+                float svKnobInset = 3.5F * scale;
                 if (inside(mouseX, mouseY, svX, svY, svW, svH)) {
                     draggingSV = true;
                     pickerSat = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + svKnobInset)) / (svW - svKnobInset * 2.0F))));
                     pickerBri = Math.max(0.0F, Math.min(1.0F, 1.0F - (float) ((mouseY - (svY + svKnobInset)) / (svH - svKnobInset * 2.0F))));
+                    if (activeColorPicker != null) activeColorPicker.setSyncedWithTheme(false);
                     updatePickerColor();
                     hexFocused = false;
                     return true;
                 }
-                float hueKnobInset = 4.0F * scale;
+                float hueKnobInset = 3.5F * scale;
                 if (inside(mouseX, mouseY, svX, hueY - 3.0F * scale, svW, hueH + 6.0F * scale)) {
                     draggingHue = true;
                     pickerHue = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + hueKnobInset)) / (svW - hueKnobInset * 2.0F))));
+                    if (activeColorPicker != null) activeColorPicker.setSyncedWithTheme(false);
                     updatePickerColor();
                     hexFocused = false;
                     return true;
                 }
-                float alphaKnobInset = 4.0F * scale;
+                float alphaKnobInset = 3.5F * scale;
                 if (inside(mouseX, mouseY, svX, alphaBarY - 3.0F * scale, svW, alphaBarH + 6.0F * scale)) {
                     draggingAlpha = true;
                     pickerAlpha = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + alphaKnobInset)) / (svW - alphaKnobInset * 2.0F))));
+                    if (activeColorPicker != null) activeColorPicker.setSyncedWithTheme(false);
                     updatePickerColor();
                     hexFocused = false;
                     return true;
@@ -3080,35 +3234,25 @@ public final class ModernClickGuiRenderer {
                     hexBuffer = (((curCol >> 24) & 0xFF) == 255) ? String.format("%06X", curCol & 0xFFFFFF) : String.format("%08X", curCol);
                     return true;
                 }
-                if (inside(mouseX, mouseY, pasteBtnX, hexRowY, iconBtnSize, iconBtnSize)) {
+                if (inside(mouseX, mouseY, syncBtnX, hexRowY, iconBtnSize, iconBtnSize)) {
                     hexFocused = false;
-                    String clip = MinecraftClient.getInstance().keyboard.getClipboard();
-                    if (clip != null && !clip.trim().isEmpty()) {
-                        String clean = clip.trim().replace("#", "");
-                        try {
-                            long parsed = Long.parseLong(clean, 16);
-                            int col;
-                            if (clean.length() <= 6) {
-                                col = ((int) parsed) | 0xFF000000;
-                            } else {
-                                col = (int) parsed;
-                            }
-                            activeColorPicker.set(col);
-                            float[] hsb = Color.RGBtoHSB((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF, null);
-                            pickerHue = hsb[0];
-                            pickerSat = hsb[1];
-                            pickerBri = hsb[2];
-                            pickerAlpha = ((col >> 24) & 0xFF) / 255.0F;
-                            hexBuffer = (((col >> 24) & 0xFF) == 255) ? String.format("%06X", col & 0xFFFFFF) : String.format("%08X", col);
-                            colorFeedback = "paste_success";
-                            colorFeedbackTime = System.currentTimeMillis();
-                        } catch (Exception ex) {
-                            colorFeedback = "paste_error";
-                            colorFeedbackTime = System.currentTimeMillis();
-                        }
-                    } else {
-                        colorFeedback = "paste_error";
+                    boolean nextSynced = !activeColorPicker.isSyncedWithTheme();
+                    activeColorPicker.setSyncedWithTheme(nextSynced);
+                    if (nextSynced) {
+                        activeColorPicker.updateFromTheme();
+                        colorFeedback = "sync_success";
                         colorFeedbackTime = System.currentTimeMillis();
+                        int col = activeColorPicker.get();
+                        float r = ((col >> 16) & 0xFF) / 255.0F;
+                        float g = ((col >> 8) & 0xFF) / 255.0F;
+                        float bCol = (col & 0xFF) / 255.0F;
+                        float[] hsb = Color.RGBtoHSB(Math.round(r * 255), Math.round(g * 255), Math.round(bCol * 255), null);
+                        pickerHue = hsb[0];
+                        pickerSat = hsb[1];
+                        pickerBri = hsb[2];
+                        pickerAlpha = ((col >> 24) & 0xFF) / 255.0F;
+                    } else {
+                        colorFeedback = null;
                     }
                     return true;
                 }
@@ -3207,8 +3351,9 @@ public final class ModernClickGuiRenderer {
                 float toggleX = b.box1X + b.boxW - toggleW - 14.0F * scale;
                 float toggleY = curY + (itemH - toggleH) * 0.5F;
 
-                float dotsW = 18.0F * scale, dotsH = 18.0F * scale;
-                float dotsX = toggleX - dotsW - 8.0F * scale;
+                float clusterGap = 8.0F * scale;
+                float dotsW = 16.0F * scale, dotsH = 16.0F * scale;
+                float dotsX = toggleX - dotsW - clusterGap;
                 float dotsY = curY + (itemH - dotsH) * 0.5F;
 
                 if (inside(mouseX, mouseY, dotsX - 2.0F * scale, dotsY - 2.0F * scale, dotsW + 4.0F * scale, dotsH + 4.0F * scale)) {
@@ -3242,6 +3387,7 @@ public final class ModernClickGuiRenderer {
                     if (settingsOpen && selectedModule == mod) {
                         settingsOpen = false;
                     } else {
+                        if (selectedModule != mod) scrollRight = 0.0F;
                         selectedModule = mod;
                         savedModuleName = mod.getName();
                         settingsOpen = true;
@@ -3427,8 +3573,8 @@ public final class ModernClickGuiRenderer {
                     }
                     setY += 34.0F * scale;
                 } else if (s instanceof SliderSetting slider) {
-                    float valBoxW = 36.0F * scale;
-                    float valBoxH = 18.0F * scale;
+                    float valBoxW = 34.0F * scale;
+                    float valBoxH = 16.0F * scale;
                     float valBoxX = b.box2X + 16.0F * scale + rowW - valBoxW;
                     float trackW = 56.0F * scale;
                     float trackX = valBoxX - trackW - 8.0F * scale;
@@ -3450,64 +3596,68 @@ public final class ModernClickGuiRenderer {
                     setY += 34.0F * scale;
                 } else if (s instanceof ModeSetting mode) {
                     float curAnim = dropdownAnim.getOrDefault(mode, 0.0F);
-                    float boxW = 136.0F * scale;
+                    float boxW = 156.0F * scale;
                     float boxX = b.box2X + 16.0F * scale + rowW - boxW;
+                    float boxY = setY + 2.5F * scale;
+                    float baseBoxH = 20.0F * scale;
 
                     if (openDropdown == mode && curAnim > 0.5F) {
-                        float dropY = setY + 1.5F * scale + 22.0F * scale + 4.0F * scale;
+                        float dropY = boxY + baseBoxH + 3.0F * scale;
                         float optY = dropY;
                         for (String m : mode.getModes()) {
-                            if (inside(mouseX, mouseY, boxX, optY, boxW, 22.0F * scale)) {
+                            if (inside(mouseX, mouseY, boxX, optY, boxW, 20.0F * scale)) {
                                 mode.set(m);
                                 openDropdown = null;
                                 return true;
                             }
-                            optY += 22.0F * scale;
+                            optY += 20.0F * scale;
                         }
                     }
 
-                    if (inside(mouseX, mouseY, boxX, setY + 1.5F * scale, boxW, 22.0F * scale)) {
+                    if (inside(mouseX, mouseY, boxX, boxY, boxW, baseBoxH)) {
                         openDropdown = (openDropdown == mode) ? null : mode;
                         openMultiDropdown = null;
                         return true;
                     }
-                    setY += 34.0F * scale + mode.getModes().size() * (22.0F * scale) * curAnim;
+                    setY += 34.0F * scale + mode.getModes().size() * (20.0F * scale) * curAnim;
                 } else if (s instanceof MultiModeSetting multi) {
                     float curAnim = multiDropdownAnim.getOrDefault(multi, 0.0F);
-                    float boxW = 136.0F * scale;
+                    float boxW = 156.0F * scale;
                     float boxX = b.box2X + 16.0F * scale + rowW - boxW;
+                    float boxY = setY + 2.5F * scale;
+                    float baseBoxH = 20.0F * scale;
 
                     if (openMultiDropdown == multi && curAnim > 0.5F) {
-                        float dropY = setY + 1.5F * scale + 22.0F * scale + 4.0F * scale;
+                        float dropY = boxY + baseBoxH + 3.0F * scale;
                         float optY = dropY;
                         for (String m : multi.getAllOptions()) {
-                            if (inside(mouseX, mouseY, boxX, optY, boxW, 22.0F * scale)) {
+                            if (inside(mouseX, mouseY, boxX, optY, boxW, 20.0F * scale)) {
                                 multi.toggleOption(m);
                                 return true;
                             }
-                            optY += 22.0F * scale;
+                            optY += 20.0F * scale;
                         }
                     }
 
-                    if (inside(mouseX, mouseY, boxX, setY + 1.5F * scale, boxW, 22.0F * scale)) {
+                    if (inside(mouseX, mouseY, boxX, boxY, boxW, baseBoxH)) {
                         openMultiDropdown = (openMultiDropdown == multi) ? null : multi;
                         openDropdown = null;
                         return true;
                     }
-                    setY += 34.0F * scale + multi.getAllOptions().size() * (22.0F * scale) * curAnim;
+                    setY += 34.0F * scale + multi.getAllOptions().size() * (20.0F * scale) * curAnim;
                 } else if (s instanceof ColorSetting color) {
-                    float btnSize = 18.0F * scale;
-                    float btnY = setY + (25.0F * scale - btnSize) * 0.5F;
-                    float swatchX = b.box2X + 16.0F * scale + rowW - btnSize;
-                    float pipetteX = swatchX - btnSize - 4.0F * scale;
-                    if (inside(mouseX, mouseY, swatchX, btnY, btnSize, btnSize) || inside(mouseX, mouseY, pipetteX, btnY, btnSize, btnSize)) {
+                    float swatchW = 22.0F * scale;
+                    float swatchH = 15.0F * scale;
+                    float btnY = setY + (25.0F * scale - swatchH) * 0.5F;
+                    float swatchX = b.box2X + 16.0F * scale + rowW - swatchW;
+                    if (inside(mouseX, mouseY, swatchX, btnY, swatchW, swatchH)) {
                         if (activeColorPicker == color && !colorPickerClosing) {
                             colorPickerClosing = true;
                         } else {
                             activeColorPicker = color;
                             colorPickerClosing = false;
                             colorPickerAnim = 0.0F;
-                            pickerX = swatchX + btnSize;
+                            pickerX = swatchX + swatchW;
                             pickerY = btnY;
                             int curCol = color.get();
                             float[] hsb = Color.RGBtoHSB((curCol >> 16) & 0xFF, (curCol >> 8) & 0xFF, curCol & 0xFF, null);
@@ -3520,6 +3670,14 @@ public final class ModernClickGuiRenderer {
                             pipetteActive = false;
                             colorFeedback = null;
                         }
+                        return true;
+                    }
+                    setY += 34.0F * scale;
+                } else if (s instanceof ActionSetting act) {
+                    float btnH = 22.0F * scale;
+                    float btnY = setY + 2.5F * scale;
+                    if (inside(mouseX, mouseY, b.box2X + 16.0F * scale, btnY, rowW, btnH)) {
+                        act.run();
                         return true;
                     }
                     setY += 34.0F * scale;
@@ -3559,8 +3717,8 @@ public final class ModernClickGuiRenderer {
         return false;
     }
 
-    private void copyModuleSettings(Module module) {
-        if (module == null) return;
+    private boolean copyModuleSettings(Module module) {
+        if (module == null) return false;
         try {
             JsonObject obj = new JsonObject();
             obj.addProperty("module", module.getName());
@@ -3581,15 +3739,18 @@ public final class ModernClickGuiRenderer {
             }
             obj.add("settings", setObj);
             MinecraftClient.getInstance().keyboard.setClipboard(obj.toString());
-        } catch (Exception ignored) {}
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
-    private void pasteModuleSettings(Module module) {
-        if (module == null) return;
+    private boolean pasteModuleSettings(Module module) {
+        if (module == null) return false;
         try {
             String clip = MinecraftClient.getInstance().keyboard.getClipboard();
-            if (clip == null || clip.isBlank()) return;
+            if (clip == null || clip.isBlank()) return false;
             JsonObject obj = JsonParser.parseString(clip).getAsJsonObject();
+            if (!obj.has("module") || !module.getName().equalsIgnoreCase(obj.get("module").getAsString())
+                    || !obj.has("settings") || !obj.get("settings").isJsonObject()) return false;
             if (obj.has("enabled")) module.setEnabled(obj.get("enabled").getAsBoolean());
             if (obj.has("bind")) {
                 MODULE_BINDS.put(module.getName(), obj.get("bind").getAsInt());
@@ -3611,7 +3772,8 @@ public final class ModernClickGuiRenderer {
                     }
                 }
             }
-        } catch (Exception ignored) {}
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     private void resetModuleSettings(Module module) {
@@ -3679,6 +3841,7 @@ public final class ModernClickGuiRenderer {
             ab.setAimPitch(true);
             ab.setStickyTarget(true);
             ab.setCheckWalls(true);
+            ab.setIncludeInvisible(true);
             ab.setOnlyOnAttack(false);
             ab.setRequireAimKey(false);
             ab.setComboEnabled(false);
@@ -3711,7 +3874,7 @@ public final class ModernClickGuiRenderer {
         float scale = b.scale;
 
         if (activeSlider != null) {
-            float valBoxW = 36.0F * scale;
+            float valBoxW = 34.0F * scale;
             float valBoxX = b.box2X + 16.0F * scale + b.rowW - valBoxW;
             float trackW = 56.0F * scale;
             float trackX = valBoxX - trackW - 8.0F * scale;
@@ -3721,8 +3884,8 @@ public final class ModernClickGuiRenderer {
         }
 
         if (activeColorPicker != null) {
-            float pickW = 194.0F * scale;
-            float pickH = 192.0F * scale;
+            float pickW = 186.0F * scale;
+            float pickH = 160.0F * scale;
             float screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
             float screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
             float px = (pickerX > 0) ? (pickerX - pickW) : (screenW - pickW) * 0.5F;
@@ -3732,29 +3895,29 @@ public final class ModernClickGuiRenderer {
 
             float hdrY = py + 8.0F * scale;
             float svX = px + 10.0F * scale;
-            float svY = hdrY + 24.0F * scale;
+            float svY = hdrY + 20.0F * scale;
             float svW = pickW - 20.0F * scale;
-            float svH = 64.0F * scale;
-            float hueY = svY + svH + 8.0F * scale;
-            float hueH = 7.0F * scale;
-            float opacityLabelY = hueY + hueH + 10.0F * scale;
-            float alphaBarY = opacityLabelY + 16.0F * scale;
+            float svH = 58.0F * scale;
+            float hueY = svY + svH + 7.0F * scale;
+            float hueH = 5.0F * scale;
+            float opacityLabelY = hueY + hueH + 7.0F * scale;
+            float alphaBarY = opacityLabelY + 13.0F * scale;
 
             if (draggingSV) {
-                float svKnobInset = 4.0F * scale;
+                float svKnobInset = 3.5F * scale;
                 pickerSat = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + svKnobInset)) / (svW - svKnobInset * 2.0F))));
                 pickerBri = Math.max(0.0F, Math.min(1.0F, 1.0F - (float) ((mouseY - (svY + svKnobInset)) / (svH - svKnobInset * 2.0F))));
                 updatePickerColor();
                 return true;
             }
             if (draggingHue) {
-                float hueKnobInset = 4.0F * scale;
+                float hueKnobInset = 3.5F * scale;
                 pickerHue = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + hueKnobInset)) / (svW - hueKnobInset * 2.0F))));
                 updatePickerColor();
                 return true;
             }
             if (draggingAlpha) {
-                float alphaKnobInset = 4.0F * scale;
+                float alphaKnobInset = 3.5F * scale;
                 pickerAlpha = Math.max(0.0F, Math.min(1.0F, (float) ((mouseX - (svX + alphaKnobInset)) / (svW - alphaKnobInset * 2.0F))));
                 updatePickerColor();
                 return true;
@@ -3774,6 +3937,8 @@ public final class ModernClickGuiRenderer {
     }
 
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        if (activeContextMenuModule != null || activeColorPicker != null || sortDropdownOpen
+                || openDropdown != null || openMultiDropdown != null) return true;
         GuiBounds b = new GuiBounds(MinecraftClient.getInstance().getWindow().getScaledWidth(),
                 MinecraftClient.getInstance().getWindow().getScaledHeight(), getGuiScale());
         if (inside(mouseX, mouseY, b.box1X, b.boxY, b.boxW, b.boxH)) {
@@ -3832,8 +3997,13 @@ public final class ModernClickGuiRenderer {
         matrices.popMatrix();
     }
 
-    private static void drawTexture(DrawContext context, Identifier texture, float x, float y, float w, float h, int color) {
+    public static void drawTexture(DrawContext context, Identifier texture, float x, float y, float w, float h, int color) {
         if (texture == null || w <= 0.0F || h <= 0.0F) return;
+        MsdfIcons.Icon icon = msdfIcon(texture);
+        if (icon != null) {
+            MsdfIcons.draw(context, icon, x, y, w, h, color);
+            return;
+        }
         int[] source = iconSourceDimensions(texture);
         float sourceAspect = source[0] / (float) source[1];
         float boxAspect = w / h;
@@ -3847,6 +4017,30 @@ public final class ModernClickGuiRenderer {
         float drawX = x + (w - drawW) * 0.5F;
         float drawY = y + (h - drawH) * 0.5F;
         Render2D.drawRoundTexture(context, texture, drawX, drawY, drawW, drawH, 0.0F, color);
+    }
+
+    private static MsdfIcons.Icon msdfIcon(Identifier texture) {
+        if (ICON_COMBAT.equals(texture)) return MsdfIcons.Icon.COMBAT;
+        if (ICON_MOVEMENT.equals(texture)) return MsdfIcons.Icon.MOVEMENT;
+        if (ICON_PLAYER.equals(texture)) return MsdfIcons.Icon.PLAYER;
+        if (ICON_VISUALS.equals(texture)) return MsdfIcons.Icon.VISUALS;
+        if (ICON_AUTOBUY.equals(texture)) return MsdfIcons.Icon.AUTOBUY;
+        if (ICON_SETTINGS.equals(texture)) return MsdfIcons.Icon.SETTINGS;
+        if (ICON_WRENCH.equals(texture)) return MsdfIcons.Icon.WRENCH;
+        if (ICON_SEARCH.equals(texture)) return MsdfIcons.Icon.SEARCH;
+        if (ICON_DOTS.equals(texture)) return MsdfIcons.Icon.DOTS;
+        if (ICON_CHEVRON.equals(texture)) return MsdfIcons.Icon.CHEVRON;
+        if (ICON_USER.equals(texture)) return MsdfIcons.Icon.USER;
+        if (ICON_PIPETTE.equals(texture)) return MsdfIcons.Icon.PIPETTE;
+        if (ICON_RESET.equals(texture)) return MsdfIcons.Icon.RESET;
+        if (ICON_SORT.equals(texture)) return MsdfIcons.Icon.SORT;
+        if (ICON_INFO.equals(texture)) return MsdfIcons.Icon.INFO;
+        if (ICON_COPY.equals(texture)) return MsdfIcons.Icon.COPY;
+        if (ICON_PIN.equals(texture)) return MsdfIcons.Icon.PIN;
+        if (ICON_NO_SETTINGS.equals(texture)) return MsdfIcons.Icon.NO_SETTINGS;
+        if (ICON_SLIDERS.equals(texture)) return MsdfIcons.Icon.SLIDERS;
+        if (ICON_ZAP.equals(texture)) return MsdfIcons.Icon.ZAP;
+        return null;
     }
 
     private static int[] iconSourceDimensions(Identifier texture) {
@@ -4011,7 +4205,7 @@ public final class ModernClickGuiRenderer {
                     activeStringSetting.set(activeStringDraft);
                 }
             } else if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                activeStringDraft += " ";
+                // Space is appended by charTyped.
                 activeStringSetting.set(activeStringDraft);
             }
             return true;
@@ -4048,9 +4242,17 @@ public final class ModernClickGuiRenderer {
             } else if (keyCode == GLFW.GLFW_KEY_A && isCtrlDown()) {
                 search = "";
             } else if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                search += " ";
+                // Space is appended by charTyped.
             }
             return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (activeContextMenuModule != null) { contextMenuClosing = true; return true; }
+            if (activeColorPicker != null) { colorPickerClosing = true; return true; }
+            if (openDropdown != null) { openDropdown = null; return true; }
+            if (openMultiDropdown != null) { openMultiDropdown = null; return true; }
+            if (sortDropdownOpen) { sortDropdownOpen = false; return true; }
+            if (unrollingInfoModule != null) { unrollClosing = true; return true; }
         }
         return false;
     }

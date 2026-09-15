@@ -3,6 +3,7 @@ package dev.fuga.fluxvisuals.gui;
 import dev.fuga.fluxvisuals.FluxVisualsClient;
 import dev.fuga.fluxvisuals.LicenseManager;
 import dev.fuga.fluxvisuals.render.Render2D;
+import dev.fuga.fluxvisuals.render.font.MsdfIcons;
 import dev.fuga.fluxvisuals.render.liqvid.BlurRenderer;
 import dev.fuga.fluxvisuals.modules.visual.Animations;
 import dev.fuga.fluxvisuals.modules.visual.AnarchySwitcher;
@@ -119,6 +120,16 @@ public final class PremiumClickGuiRenderer {
         REMEMBERED_BINDS.put(AutoSwap.BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
         REMEMBERED_BINDS.put(ElytraSwap.BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
         REMEMBERED_BINDS.put(ElytraSwap.FIREWORK_BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
+    }
+
+    private static int menuKey = GLFW.GLFW_KEY_BACKSLASH;
+
+    public static int getMenuKey() {
+        return menuKey;
+    }
+
+    public static void setMenuKey(int key) {
+        menuKey = key;
     }
 
     private static Identifier hueSliderTexture;
@@ -588,6 +599,11 @@ private float clickGuiCardY = MAIN_Y;
         REMEMBERED_BINDS.putIfAbsent(AutoSwap.BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
         REMEMBERED_BINDS.putIfAbsent(ElytraSwap.BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
         REMEMBERED_BINDS.putIfAbsent(ElytraSwap.FIREWORK_BIND_KEY, GLFW.GLFW_KEY_UNKNOWN);
+        try {
+            if (properties.containsKey("gui.premium_menu_key")) {
+                menuKey = Integer.parseInt(properties.getProperty("gui.premium_menu_key"));
+            }
+        } catch (Exception ignored) {}
     }
 
     public static void saveConfig(Properties properties) {
@@ -681,6 +697,7 @@ private float clickGuiCardY = MAIN_Y;
         for (Map.Entry<String, Integer> entry : REMEMBERED_BINDS.entrySet()) {
             properties.setProperty("gui.bind." + entry.getKey(), Integer.toString(entry.getValue()));
         }
+        properties.setProperty("gui.premium_menu_key", Integer.toString(menuKey));
     }
 
     public static void handleBinds(MinecraftClient client) {
@@ -8372,6 +8389,12 @@ private float clickGuiCardY = MAIN_Y;
     }
 
     private void drawIcon(DrawContext context, Identifier id, float x, float y, float w, float h, int color) {
+        MsdfIcons.Icon icon = SEARCH_ICON.equals(id) ? MsdfIcons.Icon.SEARCH
+                : SETTINGS_ICON.equals(id) ? MsdfIcons.Icon.SETTINGS : null;
+        if (icon != null) {
+            MsdfIcons.draw(context, icon, sx(x), sy(y), w * scale, h * scale, color);
+            return;
+        }
         context.drawTexture(RenderPipelines.GUI_TEXTURED, whiteIcon(id), Math.round(sx(x)), Math.round(sy(y)), 0.0F, 0.0F,
                 Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)), 24, 24, 24, 24, color);
     }

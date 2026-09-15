@@ -29,11 +29,11 @@ public final class ModernFont {
     private static Identifier HUE_SPECTRUM_ID = null;
 
     public enum Type {
-        SF_BOLD("font/sf-pro-display-semibold.otf", Font.BOLD, "SansSerif"),
+        SF_BOLD("font/sf-pro-display-semibold.otf", Font.PLAIN, "SansSerif"),
         SF_MEDIUM("font/sfprodisplaymedium.ttf", Font.PLAIN, "SansSerif"),
-        INTER_SEMIBOLD("font/inter_18pt-semibold.ttf", Font.BOLD, "SansSerif"),
+        INTER_SEMIBOLD("font/inter_18pt-semibold.ttf", Font.PLAIN, "SansSerif"),
         INTER_MEDIUM("font/inter_18pt-medium.ttf", Font.PLAIN, "SansSerif"),
-        OXANIUM("font/oxanium-semibold.ttf", Font.BOLD, "SansSerif");
+        OXANIUM("font/oxanium-semibold.ttf", Font.PLAIN, "SansSerif");
 
         public final String path;
         public final int style;
@@ -95,6 +95,7 @@ public final class ModernFont {
         gMeasure.setFont(font);
         gMeasure.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         gMeasure.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        gMeasure.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         FontMetrics fm = gMeasure.getFontMetrics();
 
         int padX = 4 * OVERSAMPLE;
@@ -113,6 +114,7 @@ public final class ModernFont {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.drawString(text, padX, padY + ascent);
         g.dispose();
@@ -194,9 +196,9 @@ public final class ModernFont {
         g.setPaint(silverGp);
         g.drawString("FLU", curX, ascent + 4);
 
-        // 'X' in Radiant Electric Cyber Violet (Clean, no blurry halo)
-        GradientPaint violetGp = new GradientPaint(xPos, 4, new Color(0xF0ABFC), xPos + xW, highH - 4, new Color(0x818CF8));
-        g.setPaint(violetGp);
+        // 'X' in the same cool steel accent as the rest of the dark GUI.
+        GradientPaint steelGp = new GradientPaint(xPos, 4, new Color(0xD7E5E9), xPos + xW, highH - 4, new Color(0x6B95A3));
+        g.setPaint(steelGp);
         g.drawString("X", xPos, ascent + 4);
         g.dispose();
 
@@ -318,7 +320,7 @@ public final class ModernFont {
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
             // Card background (Opaque solid midnight obsidian)
-            g.setColor(new Color(0xFF0E121B, false));
+            g.setColor(new Color(0xFF080C10, false));
             g.fill(new RoundRectangle2D.Float(0, 0, highW, highH, radius, radius));
 
             // Arrow triangle
@@ -329,8 +331,8 @@ public final class ModernFont {
             arrow.closePath();
             g.fill(arrow);
 
-            // Vibrant violet border
-            g.setColor(new Color(0xC07C3AED, true));
+            // Restrained steel border
+            g.setColor(new Color(0xC0567889, true));
             g.setStroke(new BasicStroke(1.5F * OVERSAMPLE));
             g.draw(new RoundRectangle2D.Float(1, 1, highW - 2, highH - 2, radius, radius));
             g.draw(arrow);
@@ -478,7 +480,12 @@ public final class ModernFont {
         int pxSize = Math.max(8, Math.round(size));
         TextTexture tex = getTexture(text, pxSize, type);
 
-        Render2D.drawRoundTexture(context, tex.id, x - tex.padX, y - tex.padY, tex.quadW, tex.quadH, 0.0F, color);
+        // Optical baseline correction: Java FontMetrics ascent adds extra ceiling room,
+        // shifting glyphs down by ~1.5 - 2.0 visual pixels compared to box center.
+        float baselineShift = 1.5F * (pxSize / 11.0F);
+        float drawX = x - tex.padX;
+        float drawY = y - tex.padY - baselineShift;
+        Render2D.drawRoundTexture(context, tex.id, drawX, drawY, tex.quadW, tex.quadH, 0.0F, color);
     }
 
     public static void drawCentered(DrawContext context, String text, float centerX, float y, float size, int color, Type type) {

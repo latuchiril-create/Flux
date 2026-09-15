@@ -454,6 +454,23 @@ public final class Render2D {
         drawShadow(x, y, width, height, radius, glowSize, glowColor.getRGB());
     }
 
+    public static void drawCircleGlow(DrawContext context, float centerX, float centerY,
+                                      float radius, float glowSize, int glowColor) {
+        float size = radius * 2.0F;
+        drawShadow(context, centerX - radius, centerY - radius, size, size, radius, glowSize, 0.0F, glowColor);
+    }
+
+    public static void drawCircleGlow(float centerX, float centerY,
+                                      float radius, float glowSize, int glowColor) {
+        float size = radius * 2.0F;
+        drawShadow(IDENTITY_MATRIX, centerX - radius, centerY - radius, size, size, radius, glowSize, 0.0F, glowColor);
+    }
+
+    public static void drawCircleGlow(float centerX, float centerY,
+                                      float radius, float glowSize, Color glowColor) {
+        drawCircleGlow(centerX, centerY, radius, glowSize, glowColor.getRGB());
+    }
+
     /* =========================================================================
      * Circles, Rings & Radial Shapes
      * ========================================================================= */

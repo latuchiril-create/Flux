@@ -9,6 +9,7 @@ import org.lwjgl.glfw.GLFW;
 
 public final class ModernClickGuiScreen extends Screen {
     private final ModernClickGuiRenderer renderer;
+    private boolean initialized;
 
     public ModernClickGuiScreen(ModuleManager moduleManager) {
         super(Text.literal("FLUX"));
@@ -17,7 +18,10 @@ public final class ModernClickGuiScreen extends Screen {
 
     @Override
     protected void init() {
-        renderer.open();
+        if (!initialized) {
+            renderer.open();
+            initialized = true;
+        }
     }
 
     @Override
@@ -74,6 +78,20 @@ public final class ModernClickGuiScreen extends Screen {
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public void close() {
+        FluxVisualsClient.onGuiClosed();
+        super.close();
+    }
+
+    @Override
+    public void removed() {
+        FluxVisualsClient.onGuiClosed();
+        renderer.removed();
+        initialized = false;
+        super.removed();
     }
 
     @Override

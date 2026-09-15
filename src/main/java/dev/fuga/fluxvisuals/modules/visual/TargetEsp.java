@@ -3,22 +3,26 @@ package dev.fuga.fluxvisuals.modules.visual;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
-import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.platform.SourceFactor;
+import com.mojang.blaze3d.platform.DestFactor;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
-import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import dev.fuga.fluxvisuals.FluxVisualsClient;
 import dev.fuga.fluxvisuals.modules.Module;
 import dev.fuga.fluxvisuals.modules.ModuleCategory;
+import dev.fuga.fluxvisuals.render.Render2D;
 import java.io.IOException;
+import java.util.EnumMap;
 import java.util.Locale;
-import java.util.OptionalInt;
+import java.util.Map;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gl.SimpleFramebuffer;
+import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
@@ -86,11 +90,14 @@ public final class TargetEsp extends Module {
             .withCull(false)
             .withVertexFormat(VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL, VertexFormat.DrawMode.QUADS)
             .build());
+    // Crystal shaders output straight RGB and coverage in alpha. Preserve target alpha.
+    private static final BlendFunction CRYSTAL_LIGHT_BLEND = new BlendFunction(
+            SourceFactor.SRC_ALPHA, DestFactor.ONE, SourceFactor.ZERO, DestFactor.ONE);
     private static final RenderPipeline GHOST_GLOW_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.ENTITY_EMISSIVE_SNIPPET)
             .withLocation(Identifier.of("fluxvisuals", "pipeline/target_ghost_glow"))
-            .withVertexShader(Identifier.of("fluxvisuals", "core/target_ghost_glow"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_ghost_glow"))
-            .withBlend(BlendFunction.ADDITIVE)
+            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withBlend(CRYSTAL_LIGHT_BLEND)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withDepthWrite(false)
             .withCull(false)
@@ -104,49 +111,32 @@ public final class TargetEsp extends Module {
             .withCull(false)
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.TRIANGLES)
             .build());
-    private static final RenderPipeline CRYSTAL_BLOOM_MASK_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
-            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_bloom_mask"))
+    private static final RenderPipeline CRYSTAL_GLOW_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.ENTITY_EMISSIVE_SNIPPET)
+            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_glow"))
+            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_glow"))
+            .withBlend(CRYSTAL_LIGHT_BLEND)
+            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+            .withDepthWrite(false)
+            .withCull(false)
+            .withVertexFormat(VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL, VertexFormat.DrawMode.QUADS)
+            .build());
+    private static final RenderPipeline CRYSTAL_CORE_GLOW_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_core_glow"))
+            .withBlend(CRYSTAL_LIGHT_BLEND)
             .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withDepthWrite(false)
             .withCull(false)
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.TRIANGLES)
             .build());
-    private static final RenderPipeline CRYSTAL_BLOOM_BLUR_HORIZONTAL_PIPELINE = RenderPipelines.register(RenderPipeline.builder()
-            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_bloom_blur_h"))
-            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_blit"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_blur"))
-            .withShaderDefine("HORIZONTAL")
-            .withSampler("InSampler")
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+    private static final RenderPipeline CRYSTAL_EDGE_PIPELINE = RenderPipelines.register(RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_edge"))
+            .withBlend(CRYSTAL_LIGHT_BLEND)
+            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withDepthWrite(false)
             .withCull(false)
-            .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.QUADS)
+            .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.TRIANGLES)
             .build());
-    private static final RenderPipeline CRYSTAL_BLOOM_BLUR_VERTICAL_PIPELINE = RenderPipelines.register(RenderPipeline.builder()
-            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_bloom_blur_v"))
-            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_blit"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_blur"))
-            .withSampler("InSampler")
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withCull(false)
-            .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.QUADS)
-            .build());
-    private static final RenderPipeline CRYSTAL_BLOOM_COMPOSITE_PIPELINE = RenderPipelines.register(RenderPipeline.builder()
-            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_bloom_composite"))
-            .withVertexShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_blit"))
-            .withFragmentShader(Identifier.of("fluxvisuals", "core/target_crystal_bloom_composite"))
-            .withSampler("InSampler")
-            .withBlend(BlendFunction.ADDITIVE)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .withCull(false)
-            .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.QUADS)
-            .build());
-    private static final RenderPhase.Target CRYSTAL_BLOOM_MASK_TARGET = new RenderPhase.Target(
-            "fluxvisuals_crystal_bloom_mask",
-            TargetEsp::crystalBloomMaskFramebuffer
-    );
     private static final RenderLayer CRYSTAL_FILL_LAYER = RenderLayer.of(
             "fluxvisuals_target_crystal_fill",
             1536,
@@ -158,15 +148,39 @@ public final class TargetEsp extends Module {
                     .target(RenderPhase.TRANSLUCENT_TARGET)
                     .build(false)
     );
-    private static final RenderLayer CRYSTAL_BLOOM_MASK_LAYER = RenderLayer.of(
-            "fluxvisuals_target_crystal_bloom_mask",
+    private static final RenderLayer CRYSTAL_GLOW_LAYER = RenderLayer.of(
+            "fluxvisuals_target_crystal_glow",
             1536,
             false,
             true,
-            CRYSTAL_BLOOM_MASK_PIPELINE,
+            CRYSTAL_GLOW_PIPELINE,
+            RenderLayer.MultiPhaseParameters.builder()
+                    .texture(new RenderPhase.Texture(bloomTexture(), false))
+                    .lightmap(RenderPhase.DISABLE_LIGHTMAP)
+                    .overlay(RenderPhase.DISABLE_OVERLAY_COLOR)
+                    .target(RenderPhase.TRANSLUCENT_TARGET)
+                    .build(false)
+    );
+    private static final RenderLayer CRYSTAL_CORE_GLOW_LAYER = RenderLayer.of(
+            "fluxvisuals_target_crystal_core_glow",
+            1536,
+            false,
+            true,
+            CRYSTAL_CORE_GLOW_PIPELINE,
             RenderLayer.MultiPhaseParameters.builder()
                     .texture(RenderPhase.NO_TEXTURE)
-                    .target(CRYSTAL_BLOOM_MASK_TARGET)
+                    .target(RenderPhase.TRANSLUCENT_TARGET)
+                    .build(false)
+    );
+    private static final RenderLayer CRYSTAL_EDGE_LAYER = RenderLayer.of(
+            "fluxvisuals_target_crystal_edge",
+            1536,
+            false,
+            true,
+            CRYSTAL_EDGE_PIPELINE,
+            RenderLayer.MultiPhaseParameters.builder()
+                    .texture(RenderPhase.NO_TEXTURE)
+                    .target(RenderPhase.TRANSLUCENT_TARGET)
                     .build(false)
     );
     private static final Identifier[] TARGET_MASK_TEXTURES = new Identifier[Style.values().length];
@@ -174,14 +188,67 @@ public final class TargetEsp extends Module {
     private static Identifier bloomMaskTexture;
     private static RenderLayer bloomLayer;
     private static RenderLayer ghostGlowLayer;
-    private static SimpleFramebuffer crystalBloomMaskFramebuffer;
-    private static SimpleFramebuffer crystalBloomPingFramebuffer;
-    private static SimpleFramebuffer crystalBloomPongFramebuffer;
-    private static int crystalBloomWidth = -1;
-    private static int crystalBloomHeight = -1;
+
+    public enum CrystalShader {
+        NEBULA("Туманность", "block_nebula_overlay"),
+        PLASMA("Плазма", "block_plasma_overlay"),
+        STARFIELD("Звезды", "block_starfield_overlay"),
+        NONE("Без шейдера", null);
+
+        private final String label;
+        private final String path;
+
+        CrystalShader(String label, String path) {
+            this.label = label;
+            this.path = path;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        public String path() {
+            return path;
+        }
+    }
+
+    private static final Map<CrystalShader, RenderPipeline> CRYSTAL_SHADER_PIPELINES = new EnumMap<>(CrystalShader.class);
+    private static final Map<CrystalShader, RenderLayer> CRYSTAL_SHADER_LAYERS = new EnumMap<>(CrystalShader.class);
+
+    private static RenderLayer crystalShaderLayer(CrystalShader shader) {
+        if (shader == null || shader == CrystalShader.NONE || shader.path() == null) {
+            return null;
+        }
+        return CRYSTAL_SHADER_LAYERS.computeIfAbsent(shader, s -> {
+            RenderPipeline pipeline = CRYSTAL_SHADER_PIPELINES.computeIfAbsent(s, key -> RenderPipelines.register(
+                    RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
+                            .withLocation(Identifier.of("fluxvisuals", "pipeline/target_crystal_" + key.name().toLowerCase(Locale.ROOT)))
+                            .withVertexShader(Identifier.of("fluxvisuals", "core/blockesp/" + key.path()))
+                            .withFragmentShader(Identifier.of("fluxvisuals", "core/blockesp/" + key.path()))
+                            .withBlend(CRYSTAL_LIGHT_BLEND)
+                            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                            .withDepthWrite(false)
+                            .withCull(false)
+                            .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.TRIANGLES)
+                            .build()
+            ));
+            return RenderLayer.of(
+                    "fluxvisuals_target_crystal_shader_" + s.name().toLowerCase(Locale.ROOT),
+                    1536,
+                    false,
+                    true,
+                    pipeline,
+                    RenderLayer.MultiPhaseParameters.builder()
+                            .texture(RenderPhase.NO_TEXTURE)
+                            .target(RenderPhase.TRANSLUCENT_TARGET)
+                            .build(false)
+            );
+        });
+    }
 
     private Style style = Style.NORMAL;
     private TargetFilter targetFilter = TargetFilter.PLAYERS;
+    private CrystalShader crystalShader = CrystalShader.NEBULA;
     private float maxDistance = 8.0F;
     private float lostDelaySeconds = 1.2F;
     private float animationSpeed = 1.0F;
@@ -373,9 +440,53 @@ public final class TargetEsp extends Module {
         drawLayer(context, layer);
     }
 
+    private static final class ScreenPos {
+        final float x;
+        final float y;
+        final float depth;
+
+        ScreenPos(float x, float y, float depth) {
+            this.x = x;
+            this.y = y;
+            this.depth = depth;
+        }
+    }
+
+    private ScreenPos projectToScreen(WorldRenderContext context, Vec3d pos, Quaternionf camRotInv, Matrix4f proj,
+                                      float scaledWidth, float scaledHeight) {
+        Camera camera = context.camera();
+        Vec3d camPos = camera.getPos();
+
+        float relX = (float) (pos.x - camPos.x);
+        float relY = (float) (pos.y - camPos.y);
+        float relZ = (float) (pos.z - camPos.z);
+
+        Vector3f eye = new Vector3f(relX, relY, relZ);
+        eye.rotate(camRotInv);
+
+        Vector4f clip = new Vector4f(eye.x, eye.y, eye.z, 1.0F);
+        proj.transform(clip);
+
+        if (clip.w <= 0.05F) {
+            return null;
+        }
+
+        float ndcX = clip.x / clip.w;
+        float ndcY = clip.y / clip.w;
+
+        float screenX = (ndcX + 1.0F) * 0.5F * scaledWidth;
+        float screenY = (1.0F - ndcY) * 0.5F * scaledHeight;
+
+        if (screenX < -250.0F || screenX > scaledWidth + 250.0F || screenY < -250.0F || screenY > scaledHeight + 250.0F) {
+            return null;
+        }
+
+        return new ScreenPos(screenX, screenY, clip.w);
+    }
+
     private void renderCrystals(WorldRenderContext context, Entity target, Vec3d chest, Vec3d camera, float tickDelta, int rgb, float alpha) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (target == null || client == null) {
+        if (target == null || client == null || client.getWindow() == null) {
             return;
         }
         ensureCrystalState(target);
@@ -388,30 +499,63 @@ public final class TargetEsp extends Module {
         int count = clampedCrystalCount();
 
         MatrixStack matrices = context.matrixStack();
-        RenderLayer lineLayer = RenderLayer.getLines();
         MatrixStack.Entry entry = matrices.peek();
         float bodyAlpha = alpha * appear * (0.70F + distanceAlpha * 0.30F);
         float edgeAlpha = alpha * appear * distanceAlpha;
 
-        renderCrystalBloom(context, client, center, camera, time, count, bodyAlpha, rgb, nowMs);
-
+        if (bodyAlpha <= 0.004F) return;
+        CrystalPose[] poses = new CrystalPose[count];
+        for (int i = 0; i < count; i++) {
+            poses[i] = crystalPose(center, i, count, time);
+        }
+        // One depth-tested world-space batch; halo size follows perspective.
+        VertexConsumer glow = context.consumers().getBuffer(CRYSTAL_GLOW_LAYER);
+        for (int i = 0; i < count; i++) {
+            drawGlowSprite(context, matrices, glow, poses[i].center(), camera,
+                    0.0F, 0.95F * crystalSize, bodyAlpha * 0.72F, rgb);
+        }
+        drawLayer(context, CRYSTAL_GLOW_LAYER);
+        // Pass 2: Translucent Shaded Crystal Faces (Rich Gemstone Color)
         VertexConsumer fill = context.consumers().getBuffer(CRYSTAL_FILL_LAYER);
         for (int i = 0; i < count; i++) {
-            CrystalPose pose = crystalPose(center, i, count, time);
+            CrystalPose pose = poses[i];
             drawCrystalFaces(fill, entry, camera, pose.center(), 0.175D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
-                    bodyAlpha * 0.38F, rgb, nowMs, i);
+                    bodyAlpha * 0.88F, rgb, nowMs, i);
             drawCrystalInnerDepth(fill, entry, camera, pose.center(), 0.175D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
-                    bodyAlpha * 0.58F, rgb, nowMs, i);
+                    bodyAlpha * 0.65F, rgb, nowMs, i);
         }
         drawLayer(context, CRYSTAL_FILL_LAYER);
 
-        VertexConsumer line = context.consumers().getBuffer(lineLayer);
+        // Pass 3: Procedural Animated Shader Pass on Crystal Geometry (Nebula / Plasma / Starfield)
+        RenderLayer shaderLayer = crystalShaderLayer(crystalShader);
+        if (shaderLayer != null) {
+            VertexConsumer shaderConsumer = context.consumers().getBuffer(shaderLayer);
+            for (int i = 0; i < count; i++) {
+                CrystalPose pose = poses[i];
+                drawCrystalFaces(shaderConsumer, entry, camera, pose.center(), 0.175D * crystalSize,
+                        pose.yaw(), pose.pitch(), pose.roll(), bodyAlpha * 0.75F, rgb, nowMs, i);
+            }
+            drawLayer(context, shaderLayer);
+        }
+
+        // Pass 4: Inner Core Gem Accent
+        VertexConsumer coreConsumer = context.consumers().getBuffer(CRYSTAL_CORE_GLOW_LAYER);
+        int coreColor = mixRgb(rgb, 0x00FFFFFF, 0.35F);
         for (int i = 0; i < count; i++) {
-            CrystalPose pose = crystalPose(center, i, count, time);
-            drawCrystalEdges(line, entry, camera, pose.center(), 0.175D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
+            CrystalPose pose = poses[i];
+            drawCrystalCore(coreConsumer, entry, camera, pose.center(), 0.06D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
+                    bodyAlpha * 0.70F, coreColor, nowMs, i);
+        }
+        drawLayer(context, CRYSTAL_CORE_GLOW_LAYER);
+
+        // Pass 5: Volumetric Antialiased Glowing Edges
+        VertexConsumer edgeConsumer = context.consumers().getBuffer(CRYSTAL_EDGE_LAYER);
+        for (int i = 0; i < count; i++) {
+            CrystalPose pose = poses[i];
+            drawCrystalSmoothEdges(edgeConsumer, entry, camera, pose.center(), 0.175D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
                     edgeAlpha, rgb, nowMs, i);
         }
-        drawLayer(context, lineLayer);
+        drawLayer(context, CRYSTAL_EDGE_LAYER);
     }
 
     private void ensureCrystalState(Entity target) {
@@ -449,7 +593,8 @@ public final class TargetEsp extends Module {
             Vec3d v1 = worldify(center, l1, yaw, pitch, roll);
             Vec3d v2 = worldify(center, l2, yaw, pitch, roll);
             Vec3d normal = normalizeSafe(cross(v1.subtract(v0), v2.subtract(v0)), new Vec3d(0.0D, 1.0D, 0.0D));
-            float lighting = (float) Math.max(0.18D, dot(normal, LIGHT_DIRECTION));
+            float diffuse = (float) Math.max(0.0D, dot(normal, LIGHT_DIRECTION));
+            float lighting = 0.72F + diffuse * 0.28F;
             int faceColor = shadeArgb(colorWithAlpha(rgb, faceAlpha), lighting);
             drawTriangle(fill, entry, camera, v0, v1, v2, faceColor);
         }
@@ -460,10 +605,9 @@ public final class TargetEsp extends Module {
         if (alpha <= 0.004F) {
             return;
         }
-        double innerSize = size * 0.54D;
+        double innerSize = size * 0.58D;
         Vec3d view = normalizeSafe(camera.subtract(center), new Vec3d(0.0D, 0.0D, 1.0D));
-        int deepRgb = mixRgb(rgb, 0x00041122, 0.44F);
-        int coreRgb = mixRgb(mixRgb(rgb, 0x00D8FCFF, 0.46F), 0x00FFFFFF, 0.26F);
+        int innerRgb = shadeArgb(rgb, 0.85F);
         for (int[] face : CRYSTAL_FACES) {
             Vec3d l0 = liquidDeform(crystalLocalPoint(face[0], innerSize), nowMs, seed + face[0] * 17 + 3);
             Vec3d l1 = liquidDeform(crystalLocalPoint(face[1], innerSize), nowMs, seed + face[1] * 17 + 11);
@@ -473,101 +617,80 @@ public final class TargetEsp extends Module {
             Vec3d v2 = worldify(center, l2, yaw, pitch, roll);
             Vec3d normal = normalizeSafe(cross(v1.subtract(v0), v2.subtract(v0)), new Vec3d(0.0D, 1.0D, 0.0D));
             float facing = clamp01((float) (dot(normal, view) * 0.5D + 0.5D));
-            float light = clamp01(0.36F + facing * 0.36F + (float) Math.max(0.0D, dot(normal, LIGHT_DIRECTION)) * 0.30F);
-            int faceRgb = mixRgb(deepRgb, coreRgb, 0.22F + facing * 0.68F);
-            int faceColor = shadeArgb(colorWithAlpha(faceRgb, alpha * (0.18F + facing * 0.28F)), light);
+            int faceColor = colorWithAlpha(innerRgb, alpha * (0.35F + facing * 0.35F));
             drawTriangle(fill, entry, camera, v0, v1, v2, faceColor);
         }
     }
 
-    private void renderCrystalBloom(WorldRenderContext context, MinecraftClient client, Vec3d center, Vec3d camera,
-                                    double time, int count, float alpha, int rgb, long nowMs) {
-        if (!ensureCrystalBloomFramebuffers(client)) {
-            return;
-        }
-
-        Framebuffer main = client.getFramebuffer();
-        RenderSystem.getDevice().createCommandEncoder().clearColorTexture(crystalBloomMaskFramebuffer.getColorAttachment(), 0);
-        if (main.getDepthAttachment() != null && crystalBloomMaskFramebuffer.getDepthAttachment() != null) {
-            crystalBloomMaskFramebuffer.copyDepthFrom(main);
-        }
-
-        MatrixStack.Entry entry = context.matrixStack().peek();
-        VertexConsumer mask = context.consumers().getBuffer(CRYSTAL_BLOOM_MASK_LAYER);
-        float maskAlpha = alpha * Math.min(0.92F, 0.58F + 2.40F / Math.max(1.0F, count));
-        int bloomRgb = crystalBloomColor(rgb);
-        for (int i = 0; i < count; i++) {
-            CrystalPose pose = crystalPose(center, i, count, time);
-            drawCrystalBloomMask(mask, entry, camera, pose.center(), 0.215D * crystalSize, pose.yaw(), pose.pitch(), pose.roll(),
-                    maskAlpha, bloomRgb, nowMs, i);
-        }
-        drawLayer(context, CRYSTAL_BLOOM_MASK_LAYER);
-
-        blurCrystalBloom(main);
-    }
-
-    private void drawCrystalBloomMask(VertexConsumer mask, MatrixStack.Entry entry, Vec3d camera, Vec3d center, double size,
-                                      double yaw, double pitch, double roll, float alpha, int rgb, long nowMs, int seed) {
+    private void drawCrystalCore(VertexConsumer consumer, MatrixStack.Entry entry, Vec3d camera, Vec3d center, double size,
+                                 double yaw, double pitch, double roll, float alpha, int rgb, long nowMs, int seed) {
         if (alpha <= 0.004F) {
             return;
         }
         int color = colorWithAlpha(rgb, alpha);
         for (int[] face : CRYSTAL_FACES) {
-            Vec3d l0 = liquidDeform(crystalLocalPoint(face[0], size), nowMs, seed + face[0] * 13);
-            Vec3d l1 = liquidDeform(crystalLocalPoint(face[1], size), nowMs, seed + face[1] * 13 + 7);
-            Vec3d l2 = liquidDeform(crystalLocalPoint(face[2], size), nowMs, seed + face[2] * 13 + 17);
-            drawTriangle(mask, entry, camera,
-                    worldify(center, l0, yaw, pitch, roll),
-                    worldify(center, l1, yaw, pitch, roll),
-                    worldify(center, l2, yaw, pitch, roll),
-                    color);
+            Vec3d l0 = crystalLocalPoint(face[0], size);
+            Vec3d l1 = crystalLocalPoint(face[1], size);
+            Vec3d l2 = crystalLocalPoint(face[2], size);
+            Vec3d v0 = worldify(center, l0, yaw, pitch, roll);
+            Vec3d v1 = worldify(center, l1, yaw, pitch, roll);
+            Vec3d v2 = worldify(center, l2, yaw, pitch, roll);
+            drawTriangle(consumer, entry, camera, v0, v1, v2, color);
         }
     }
 
-    private void drawCrystalEdges(VertexConsumer line, MatrixStack.Entry entry, Vec3d camera, Vec3d center, double size,
-                                  double yaw, double pitch, double roll, float edgeAlpha, int rgb, long nowMs, int seed) {
+    private void drawCrystalSmoothEdges(VertexConsumer edgeConsumer, MatrixStack.Entry entry, Vec3d camera, Vec3d center, double size,
+                                        double yaw, double pitch, double roll, float edgeAlpha, int rgb, long nowMs, int seed) {
         if (edgeAlpha <= 0.004F) {
             return;
         }
-        int darkEdge = colorWithAlpha(0x00101936, edgeAlpha * 0.96F);
-        int glowEdge = colorWithAlpha(mixRgb(rgb, 0x00B9F6FF, 0.64F), edgeAlpha * 0.78F);
-        int hotEdge = colorWithAlpha(mixRgb(rgb, 0x00FFFFFF, 0.58F), edgeAlpha * 0.44F);
-        for (int[] face : CRYSTAL_FACES) {
-            Vec3d v0 = worldify(center, crystalLocalPoint(face[0], size), yaw, pitch, roll);
-            Vec3d v1 = worldify(center, crystalLocalPoint(face[1], size), yaw, pitch, roll);
-            Vec3d v2 = worldify(center, crystalLocalPoint(face[2], size), yaw, pitch, roll);
-            drawLine(line, entry, camera, v0, v1, darkEdge);
-            drawLine(line, entry, camera, v1, v2, darkEdge);
-            drawLine(line, entry, camera, v2, v0, darkEdge);
-            drawLine(line, entry, camera, v0, v1, glowEdge);
-            drawLine(line, entry, camera, v1, v2, glowEdge);
-            drawLine(line, entry, camera, v2, v0, glowEdge);
-            drawLine(line, entry, camera, v0, v1, hotEdge);
-            drawLine(line, entry, camera, v1, v2, hotEdge);
-            drawLine(line, entry, camera, v2, v0, hotEdge);
+        int outerColor = colorWithAlpha(mixRgb(rgb, 0x00FFFFFF, 0.15F), edgeAlpha * 0.85F);
+        int innerColor = colorWithAlpha(mixRgb(rgb, 0x00FFFFFF, 0.45F), edgeAlpha * 0.95F);
+        double outerThickness = 0.0038D * (crystalSize + 0.35D);
+        double innerThickness = 0.0016D * (crystalSize + 0.35D);
+
+        Vec3d[] points = new Vec3d[CRYSTAL_UNIT_POINTS.length];
+        for (int i = 0; i < points.length; i++) {
+            points[i] = worldify(center, crystalLocalPoint(i, size), yaw, pitch, roll);
         }
-        drawCrystalDepthLines(line, entry, camera, center, size, yaw, pitch, roll, edgeAlpha, rgb, nowMs, seed);
+        // Opposite pairs share an axis; every other pair is one unique edge.
+        for (int a = 0; a < points.length; a++) {
+            for (int b = a + 1; b < points.length; b++) {
+                if (a / 2 == b / 2) continue;
+                drawSmoothEdge(edgeConsumer, entry, camera, points[a], points[b], outerColor, outerThickness);
+                drawSmoothEdge(edgeConsumer, entry, camera, points[a], points[b], innerColor, innerThickness);
+            }
+        }
     }
-
-    private void drawCrystalDepthLines(VertexConsumer line, MatrixStack.Entry entry, Vec3d camera, Vec3d center, double size,
-                                       double yaw, double pitch, double roll, float edgeAlpha, int rgb, long nowMs, int seed) {
-        if (edgeAlpha <= 0.004F) {
+    private static void drawSmoothEdge(VertexConsumer consumer, MatrixStack.Entry entry, Vec3d camera, Vec3d from, Vec3d to, int color, double thickness) {
+        if ((color >>> 24) <= 0 || thickness <= 0.0D) {
             return;
         }
-        Vec3d core = worldify(center, Vec3d.ZERO, yaw, pitch, roll);
-        Vec3d top = worldify(center, liquidDeform(crystalLocalPoint(0, size * 0.76D), nowMs, seed + 41), yaw, pitch, roll);
-        Vec3d bottom = worldify(center, liquidDeform(crystalLocalPoint(1, size * 0.76D), nowMs, seed + 43), yaw, pitch, roll);
-        int shadow = colorWithAlpha(0x00030B20, edgeAlpha * 0.38F);
-        int inner = colorWithAlpha(mixRgb(rgb, 0x00E4FFFF, 0.58F), edgeAlpha * 0.46F);
-        int glint = colorWithAlpha(mixRgb(rgb, 0x00FFFFFF, 0.72F), edgeAlpha * 0.30F);
-
-        drawLine(line, entry, camera, top, bottom, shadow);
-        drawLine(line, entry, camera, top, bottom, inner);
-        for (int i = 2; i < CRYSTAL_UNIT_POINTS.length; i++) {
-            Vec3d side = worldify(center, liquidDeform(crystalLocalPoint(i, size * 0.55D), nowMs, seed + 47 + i * 5), yaw, pitch, roll);
-            drawLine(line, entry, camera, side, core, shadow);
-            drawLine(line, entry, camera, side, core, glint);
+        Vec3d edge = to.subtract(from);
+        if (edge.lengthSquared() < 1.0E-8D) {
+            return;
         }
+        Vec3d mid = from.add(to).multiply(0.5D);
+        Vec3d view = camera.subtract(mid);
+        Vec3d perp = cross(edge, view);
+        if (perp.lengthSquared() < 1.0E-8D) {
+            perp = new Vec3d(0.0D, thickness, 0.0D);
+        } else {
+            perp = perp.normalize().multiply(thickness);
+        }
+
+        Vec3d p0 = from.subtract(perp).subtract(camera);
+        Vec3d p1 = from.add(perp).subtract(camera);
+        Vec3d p2 = to.add(perp).subtract(camera);
+        Vec3d p3 = to.subtract(perp).subtract(camera);
+
+        colorVertex(consumer, entry, p0, color);
+        colorVertex(consumer, entry, p1, color);
+        colorVertex(consumer, entry, p2, color);
+
+        colorVertex(consumer, entry, p0, color);
+        colorVertex(consumer, entry, p2, color);
+        colorVertex(consumer, entry, p3, color);
     }
 
     private Vec3d crystalLocalPoint(int index, double size) {
@@ -582,8 +705,7 @@ public final class TargetEsp extends Module {
         float stream = ghostStream;
         Vec3d anchoredBase = ghostAnchor(tickDelta, targetBase);
         Vec3d base = anchoredBase.add(targetBase.subtract(anchoredBase).multiply(stream * 0.14D));
-        Vec3d upperCenter = base.add(0.0D, target.getHeight() * 0.5D + 0.5D, 0.0D);
-        Vec3d lowerCenter = base.add(0.0D, 0.5D, 0.0D);
+        double height = target.getHeight();
         Vec3d drag = motion.lengthSquared() > 1.0E-6D
                 ? motion.normalize().multiply(-(0.08D + Math.min(1.05D, motion.length() * (7.4D + ghostSpeed * 2.0D))) * stream)
                 : Vec3d.ZERO;
@@ -594,27 +716,24 @@ public final class TargetEsp extends Module {
         double baseTailSpacing = 0.028D + ghostLength * 0.018D;
         double tailSpacing = baseTailSpacing * (baseTailSteps - 1.0D) / Math.max(1.0D, tailSteps - 1.0D);
         float sizeDrop = 0.040F + ghostLength * 0.020F;
-        float glowScale = 1.48F + ghostLength * 0.12F;
+        float glowScale = 1.70F + ghostLength * 0.18F;
         float trailDrag = 0.50F + ghostLength * 0.36F;
         int glowRgb = ghostGlowColor(rgb);
         RenderLayer glowLayer = ghostGlowLayer();
         VertexConsumer glowConsumer = context.consumers().getBuffer(glowLayer);
-        renderGhostSprites(context, matrices, glowConsumer, camera, upperCenter, lowerCenter, drag, time, count, tailSteps,
-                tailSpacing, sizeDrop, trailDrag, glowScale, 0.045F, stream, alpha, glowRgb);
+        // Outer broad bloom halo (crystal style additive lighting)
+        renderGhostSprites(context, matrices, glowConsumer, camera, base, height, drag, time, count, tailSteps,
+                tailSpacing, sizeDrop, trailDrag, glowScale, 0.28F, stream, alpha, glowRgb);
+        // Inner dense glowing core trail (crystal style additive lighting)
+        renderGhostSprites(context, matrices, glowConsumer, camera, base, height, drag, time, count, tailSteps,
+                tailSpacing, sizeDrop, trailDrag, 1.0F, 0.42F, stream, alpha, rgb);
         drawLayer(context, glowLayer);
-
-        RenderLayer ghostLayer = bloomLayer();
-        VertexConsumer ghostConsumer = context.consumers().getBuffer(ghostLayer);
-        renderGhostSprites(context, matrices, ghostConsumer, camera, upperCenter, lowerCenter, drag, time, count, tailSteps,
-                tailSpacing, sizeDrop, trailDrag, 1.0F, 0.135F, stream, alpha, rgb);
-        drawLayer(context, ghostLayer);
     }
 
     private void renderStaticGhosts(WorldRenderContext context, Entity target, Vec3d camera, float tickDelta, int rgb, float alpha) {
         MatrixStack matrices = context.matrixStack();
         Vec3d base = target.getLerpedPos(tickDelta);
-        Vec3d upperCenter = base.add(0.0D, target.getHeight() * 0.5D + 0.5D, 0.0D);
-        Vec3d lowerCenter = base.add(0.0D, 0.5D, 0.0D);
+        double height = target.getHeight();
         double time = (animationTicks + tickDelta) * (0.12D + ghostSpeed * 0.065D);
         int count = Math.max(1, Math.min(MAX_GHOSTS, ghostCount));
         int baseTailSteps = Math.max(12, Math.min(36, Math.round(12.0F + ghostLength * 12.0F)));
@@ -622,33 +741,40 @@ public final class TargetEsp extends Module {
         double baseTailSpacing = 0.028D + ghostLength * 0.018D;
         double tailSpacing = baseTailSpacing * (baseTailSteps - 1.0D) / Math.max(1.0D, tailSteps - 1.0D);
         float sizeDrop = 0.040F + ghostLength * 0.020F;
-        float glowScale = 1.48F + ghostLength * 0.12F;
+        float glowScale = 1.70F + ghostLength * 0.18F;
         float trailDrag = 0.50F + ghostLength * 0.36F;
+        int glowRgb = ghostGlowColor(rgb);
 
         RenderLayer glowLayer = ghostGlowLayer();
         VertexConsumer glowConsumer = context.consumers().getBuffer(glowLayer);
-        renderGhostSprites(context, matrices, glowConsumer, camera, upperCenter, lowerCenter, Vec3d.ZERO, time, count,
-                tailSteps, tailSpacing, sizeDrop, trailDrag, glowScale, 0.045F, 0.0F, alpha, ghostGlowColor(rgb));
+        // Outer broad bloom halo (crystal style additive lighting)
+        renderGhostSprites(context, matrices, glowConsumer, camera, base, height, Vec3d.ZERO, time, count,
+                tailSteps, tailSpacing, sizeDrop, trailDrag, glowScale, 0.28F, 0.0F, alpha, glowRgb);
+        // Inner dense glowing core trail (crystal style additive lighting)
+        renderGhostSprites(context, matrices, glowConsumer, camera, base, height, Vec3d.ZERO, time, count,
+                tailSteps, tailSpacing, sizeDrop, trailDrag, 1.0F, 0.42F, 0.0F, alpha, rgb);
         drawLayer(context, glowLayer);
-
-        RenderLayer ghostLayer = bloomLayer();
-        VertexConsumer ghostConsumer = context.consumers().getBuffer(ghostLayer);
-        renderGhostSprites(context, matrices, ghostConsumer, camera, upperCenter, lowerCenter, Vec3d.ZERO, time, count,
-                tailSteps, tailSpacing, sizeDrop, trailDrag, 1.0F, 0.135F, 0.0F, alpha, rgb);
-        drawLayer(context, ghostLayer);
     }
 
     private void renderGhostSprites(WorldRenderContext context, MatrixStack matrices, VertexConsumer consumer, Vec3d camera,
-                                    Vec3d upperCenter, Vec3d lowerCenter, Vec3d drag, double time, int count, int tailSteps,
+                                    Vec3d entityBase, double entityHeight, Vec3d drag, double time, int count, int tailSteps,
                                     double tailSpacing, float sizeDrop, float trailDrag, float sizeScale, float spriteAlpha,
                                     float stream, float alpha, int rgb) {
         for (int i = 0; i < count; i++) {
-            boolean upperTrack = (i & 1) == 0;
-            Vec3d center = upperTrack ? upperCenter : lowerCenter;
-            double direction = upperTrack ? 1.0D : -1.0D;
-            double phase = Math.PI * 2.0D * i / count;
-            double radiusOffset = (i % 3) * 0.035D;
+            // Distinct angular phase around 360 deg
+            double phase = (Math.PI * 2.0D * i) / count;
+            // Distinct height level along the entity body
+            double heightFraction = (count <= 1) ? 0.5D : ((double) i / (count - 1));
+            double yOffset = 0.22D + entityHeight * (0.15D + 0.65D * heightFraction);
+            Vec3d ghostCenter = entityBase.add(0.0D, yOffset, 0.0D);
+
+            // Staggered orbital plane inclination (tilted 3D ribbons that never cross)
+            double tiltPitch = Math.sin(i * 1.75D + 0.35D) * 0.32D;
+            double tiltRoll = Math.cos(i * 1.75D + 0.35D) * 0.32D;
+            // Distinct clearance radius
+            double ghostRadius = 0.44D + ((i % 3) * 0.08D) + (count > 6 ? (i * 0.02D) : 0.0D);
             float strandScale = 0.94F + (i % 3) * 0.035F;
+
             for (int j = 0; j < tailSteps; j++) {
                 float progress = j / (float) (tailSteps - 1);
                 double trailTime = time + phase - j * tailSpacing;
@@ -659,8 +785,8 @@ public final class TargetEsp extends Module {
                     continue;
                 }
 
-                Vec3d pos = ghostPathPoint(center, drag, direction, trailTime, phase, radiusOffset, progress, trailDrag, stream);
-                Vec3d next = ghostPathPoint(center, drag, direction, trailTime - tailSpacing, phase, radiusOffset,
+                Vec3d pos = ghostPathPoint(ghostCenter, drag, trailTime, phase, ghostRadius, tiltPitch, tiltRoll, progress, trailDrag, stream);
+                Vec3d next = ghostPathPoint(ghostCenter, drag, trailTime - tailSpacing, phase, ghostRadius, tiltPitch, tiltRoll,
                         Math.min(1.0F, progress + 1.0F / Math.max(1, tailSteps - 1)), trailDrag, stream);
                 Vec3d motion = pos.subtract(next);
                 float sizeProgress = smoothstep(0.0F, 1.0F, Math.max(0.12F, progress));
@@ -676,17 +802,20 @@ public final class TargetEsp extends Module {
         }
     }
 
-    private Vec3d ghostPathPoint(Vec3d center, Vec3d drag, double direction, double trailTime, double phase,
-                                 double radiusOffset, float progress, float trailDrag, float stream) {
+    private Vec3d ghostPathPoint(Vec3d center, Vec3d drag, double trailTime, double phase,
+                                 double radius, double tiltPitch, double tiltRoll,
+                                 float progress, float trailDrag, float stream) {
         double sin = Math.sin(trailTime);
         double cos = Math.cos(trailTime);
-        double radius = 0.46D + radiusOffset + Math.sin(trailTime * 0.31D + phase) * 0.035D;
-        double weave = Math.sin(trailTime * 1.55D + phase * 0.8D) * 0.026D * (1.0D - progress * 0.45D);
-        double yWave = Math.sin(trailTime + phase * 0.35D) * 0.26D
-                + Math.sin(trailTime * 0.55D + phase) * 0.040D * (1.0D - progress * 0.35D);
+        double weave = Math.sin(trailTime * 1.35D + phase * 0.8D) * 0.020D * (1.0D - progress * 0.45D);
+        double yWave = Math.sin(trailTime * 0.95D + phase * 1.4D) * 0.09D * (1.0D - progress * 0.35D);
+
+        double ox = cos * radius - sin * weave;
+        double oz = sin * radius + cos * weave;
+        double oy = yWave + ox * tiltPitch + oz * tiltRoll;
+
         Vec3d lag = drag.multiply(progress * trailDrag * 0.95D);
-        Vec3d orbit = center.add(direction * (cos * radius - sin * weave), yWave,
-                direction * (sin * radius + cos * weave)).add(lag);
+        Vec3d orbit = center.add(ox, oy, oz).add(lag);
         if (stream <= 0.001F || drag.lengthSquared() < 1.0E-6D) {
             return orbit;
         }
@@ -695,7 +824,7 @@ public final class TargetEsp extends Module {
         Vec3d side = new Vec3d(-back.z, 0.0D, back.x);
         double phaseSide = Math.sin(phase);
         double phaseHeight = Math.cos(phase);
-        double lane = (phaseSide * (0.18D + radiusOffset * 0.70D) + direction * 0.045D
+        double lane = (phaseSide * (0.18D + (radius - 0.44D) * 0.70D)
                 + Math.sin(phase + trailTime * 0.22D) * 0.020D);
         double laneFade = 1.0D - progress * 0.62D;
         double streamWave = Math.sin(trailTime * 0.80D + phase) * 0.024D * (1.0D - progress * 0.35D);
@@ -1029,11 +1158,6 @@ public final class TargetEsp extends Module {
         return mixRgb(rgb, 0x00FF2020, Math.min(1.0F, mix * 0.78F));
     }
 
-    private static int crystalBloomColor(int rgb) {
-        int cool = mixRgb(rgb, 0x004DA7FF, 0.62F);
-        return mixRgb(cool, 0x00D6FBFF, 0.30F);
-    }
-
     private static int mixRgb(int from, int to, float delta) {
         float t = clamp01(delta);
         int fromRed = (from >> 16) & 255;
@@ -1124,89 +1248,6 @@ public final class TargetEsp extends Module {
             bloomMaskTexture = maskTexture(BLOOM_SOURCE_TEXTURE, "bloom", false);
         }
         return bloomMaskTexture;
-    }
-
-    private static Framebuffer crystalBloomMaskFramebuffer() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (ensureCrystalBloomFramebuffers(client)) {
-            return crystalBloomMaskFramebuffer;
-        }
-        return client == null ? null : client.getFramebuffer();
-    }
-
-    private static boolean ensureCrystalBloomFramebuffers(MinecraftClient client) {
-        if (client == null || client.getWindow() == null || client.getFramebuffer() == null) {
-            return false;
-        }
-        int width = Math.max(1, client.getWindow().getFramebufferWidth());
-        int height = Math.max(1, client.getWindow().getFramebufferHeight());
-        if (crystalBloomMaskFramebuffer != null && crystalBloomWidth == width && crystalBloomHeight == height) {
-            return true;
-        }
-
-        deleteCrystalBloomFramebuffers();
-        crystalBloomWidth = width;
-        crystalBloomHeight = height;
-        crystalBloomMaskFramebuffer = createCrystalBloomFramebuffer("FluxVisuals Crystal Bloom Mask", width, height, true);
-        crystalBloomPingFramebuffer = createCrystalBloomFramebuffer("FluxVisuals Crystal Bloom Ping", width, height, false);
-        crystalBloomPongFramebuffer = createCrystalBloomFramebuffer("FluxVisuals Crystal Bloom Pong", width, height, false);
-        return crystalBloomMaskFramebuffer != null && crystalBloomPingFramebuffer != null && crystalBloomPongFramebuffer != null;
-    }
-
-    private static SimpleFramebuffer createCrystalBloomFramebuffer(String name, int width, int height, boolean depth) {
-        SimpleFramebuffer framebuffer = new SimpleFramebuffer(name, width, height, depth);
-        framebuffer.setFilter(FilterMode.LINEAR);
-        return framebuffer;
-    }
-
-    private static void deleteCrystalBloomFramebuffers() {
-        if (crystalBloomMaskFramebuffer != null) {
-            crystalBloomMaskFramebuffer.delete();
-            crystalBloomMaskFramebuffer = null;
-        }
-        if (crystalBloomPingFramebuffer != null) {
-            crystalBloomPingFramebuffer.delete();
-            crystalBloomPingFramebuffer = null;
-        }
-        if (crystalBloomPongFramebuffer != null) {
-            crystalBloomPongFramebuffer.delete();
-            crystalBloomPongFramebuffer = null;
-        }
-    }
-
-    private static void blurCrystalBloom(Framebuffer main) {
-        if (main == null || crystalBloomMaskFramebuffer == null
-                || crystalBloomPingFramebuffer == null || crystalBloomPongFramebuffer == null) {
-            return;
-        }
-
-        drawFullscreenPass(CRYSTAL_BLOOM_BLUR_HORIZONTAL_PIPELINE,
-                crystalBloomPingFramebuffer, crystalBloomMaskFramebuffer.getColorAttachmentView());
-        drawFullscreenPass(CRYSTAL_BLOOM_BLUR_VERTICAL_PIPELINE,
-                crystalBloomPongFramebuffer, crystalBloomPingFramebuffer.getColorAttachmentView());
-        drawFullscreenPass(CRYSTAL_BLOOM_COMPOSITE_PIPELINE,
-                main, crystalBloomPongFramebuffer.getColorAttachmentView());
-    }
-
-    private static void drawFullscreenPass(RenderPipeline pipeline, Framebuffer output, GpuTextureView input) {
-        if (pipeline == null || output == null || input == null
-                || output.getColorAttachmentView() == null || input.isClosed()) {
-            return;
-        }
-        var indexBuffer = RenderSystem.getSequentialBuffer(VertexFormat.DrawMode.QUADS);
-        var indices = indexBuffer.getIndexBuffer(6);
-        try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
-                () -> "FluxVisuals crystal bloom pass",
-                output.getColorAttachmentView(),
-                OptionalInt.empty()
-        )) {
-            pass.setPipeline(pipeline);
-            RenderSystem.bindDefaultUniforms(pass);
-            pass.bindSampler("InSampler", input);
-            pass.setVertexBuffer(0, RenderSystem.getQuadVertexBuffer());
-            pass.setIndexBuffer(indices, indexBuffer.getIndexType());
-            pass.drawIndexed(0, 0, 6, 1);
-        }
     }
 
     private static Identifier maskTexture(Identifier source, String name, boolean hardAlpha) {
@@ -1548,6 +1589,15 @@ public final class TargetEsp extends Module {
             return;
         }
         this.crystalRadius = next;
+        FluxVisualsClient.requestConfigSave();
+    }
+
+    public CrystalShader getCrystalShader() {
+        return crystalShader;
+    }
+
+    public void setCrystalShader(CrystalShader crystalShader) {
+        this.crystalShader = crystalShader == null ? CrystalShader.NEBULA : crystalShader;
         FluxVisualsClient.requestConfigSave();
     }
 

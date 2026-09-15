@@ -45,17 +45,85 @@ if (Test-Path $LegacyGame) {
 
 # 3. Mods sync: fresh built jar + dependency mods from legacy
 Write-Host "[sync] mods"
-Get-ChildItem $ModsDir -Filter "fluxvisuals*.jar" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-$builtJar = $null
-foreach ($c in @("build\libs\fluxvisuals-free-1.0.0.jar",
-                 "build\libs\fluxvisuals-licensed-1.0.0.jar",
-                 "mods\fluxvisuals-1.0.0.jar")) {
-    $p = Join-Path $Root $c
-    if (Test-Path $p) { $builtJar = $p; break }
-}
+$candidateJars = @(
+    (Join-Path $Root "build\libs\fluxvisuals-licensed-1.0.0.jar"),
+    (Join-Path $Root "build\libs\fluxvisuals-free-1.0.0.jar"),
+    (Join-Path $Root "mods\fluxvisuals-1.0.0.jar")
+) | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending
+
+$builtJar = if ($candidateJars.Count -gt 0) { $candidateJars[0] } else { $null }
 if ($builtJar) {
-    Copy-Item $builtJar (Join-Path $ModsDir (Split-Path -Leaf $builtJar)) -Force
-    Write-Host "  mod: $(Split-Path -Leaf $builtJar)"
+    # Stage the archive outside the live mods directory. A direct Copy-Item
+    # can leave a half-written JAR when the launcher is interrupted, which
+    # makes Fabric fail later with "invalid LOC header".
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    function Test-JarArchive($path) {
+        $archive = $null
+        try {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($path)
+            $buffer = New-Object byte[] 8192
+            foreach ($entry in $archive.Entries) {
+                $stream = $entry.Open()
+                try {
+                    while ($stream.Read($buffer, 0, $buffer.Length) -gt 0) { }
+                } finally {
+                    $stream.Dispose()
+                }
+            }
+            return $true
+        } catch {
+            return $false
+        } finally {
+            if ($archive) { $archive.Dispose() }
+        }
+    }
+    $stagedJar = Join-Path $Root ("build\fluxvisuals-sync-" + [Guid]::NewGuid().ToString("N") + ".jar")
+    Copy-Item -LiteralPath $builtJar -Destination $stagedJar -Force
+    if ((Get-Item -LiteralPath $stagedJar).Length -ne (Get-Item -LiteralPath $builtJar).Length) {
+        Remove-Item -LiteralPath $stagedJar -Force -ErrorAction SilentlyContinue
+        throw "Staged mod archive size does not match the build output"
+    }
+    if (-not (Test-JarArchive $stagedJar)) {
+        Remove-Item -LiteralPath $stagedJar -Force -ErrorAction SilentlyContinue
+        throw "Staged mod archive failed ZIP validation"
+    }
+    $liveJar = Join-Path $ModsDir (Split-Path -Leaf $builtJar)
+    if (Test-Path -LiteralPath $liveJar) {
+        # Do not replace an identical archive. Some launchers and antivirus
+        # scanners keep a read handle on the active JAR even after Minecraft
+        # exits, and replacing it would make a harmless relaunch fail.
+        $liveHash = (Get-FileHash -LiteralPath $liveJar -Algorithm SHA256).Hash
+        $builtHash = (Get-FileHash -LiteralPath $builtJar -Algorithm SHA256).Hash
+        if ($liveHash -eq $builtHash) {
+            Remove-Item -LiteralPath $stagedJar -Force -ErrorAction SilentlyContinue
+            $stagedJar = $null
+        } else {
+            # Remove only after the staged archive has passed validation. The
+            # launcher starts the game immediately afterwards, so no game
+            # process can observe a partially copied archive.
+            try {
+                [System.IO.File]::Delete($liveJar)
+            } catch {
+                throw "Live mod archive is in use. Close Minecraft and run launch.ps1 again."
+            }
+        }
+    }
+    if ($stagedJar) {
+        Move-Item -LiteralPath $stagedJar -Destination $liveJar -Force
+    }
+    # Keep exactly one FLUX archive in the live mods directory. Older builds
+    # (for example fluxvisuals-free-1.0.0.jar) can otherwise win mod loading
+    # or leave the user testing a stale command suggester.
+    Get-ChildItem $ModsDir -Filter "fluxvisuals*.jar" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $liveJar } |
+        ForEach-Object {
+            try {
+                [System.IO.File]::Delete($_.FullName)
+            } catch {
+                throw "Old FLUX archive is in use: $($_.Name). Close Minecraft and run launch.ps1 again."
+            }
+        }
+    Write-Host "  mod: $(Split-Path -Leaf $builtJar) (validated sync)"
 } else {
     Write-Host "  WARN: no built mod jar found, run gradlew build first"
 }

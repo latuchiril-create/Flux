@@ -28,6 +28,13 @@ vec3 smoothBackdrop(vec2 uv, vec2 texel) {
     return color;
 }
 
+vec3 sampleChromatic(vec2 uv, vec2 dir, float disp, vec2 texel) {
+    float r = texture(Sampler0, clamp(uv + dir * disp * 1.4, vec2(0.0), vec2(1.0))).r;
+    float g = texture(Sampler0, clamp(uv, vec2(0.0), vec2(1.0))).g;
+    float b = texture(Sampler0, clamp(uv - dir * disp * 1.4, vec2(0.0), vec2(1.0))).b;
+    return vec3(r, g, b);
+}
+
 float roundedBoxSDF(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + r;
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
@@ -45,51 +52,54 @@ void main() {
 
     vec2 screenUv = gl_FragCoord.xy / screenSize;
     vec2 fromCenter = localPoint / max(halfSize, vec2(1.0));
-    float edgeWidth = max(edgeLight, 0.001);
+    float edgeWidth = max(edgeLight, 1.5);
     float edge = smoothstep(-edgeWidth, 0.0, distance);
     edge = edge * edge * (3.0 - 2.0 * edge);
-    // Keep the highlight narrow, but carry the liquid refraction and local blur
-    // a little way into the panel. This makes the perimeter feel like glass
-    // instead of only blurring the one-pixel outline.
-    float innerBandWidth = max(edgeWidth * 4.0,
-            min(halfSize.x, halfSize.y) * 0.16);
+
+    float innerBandWidth = max(edgeWidth * 4.5, min(halfSize.x, halfSize.y) * 0.28);
     float innerEdge = smoothstep(-innerBandWidth, 0.0, distance);
     innerEdge = innerEdge * innerEdge * (3.0 - 2.0 * innerEdge);
+
     vec2 radial = normalize(fromCenter + vec2(0.0001));
     vec2 tangent = vec2(-radial.y, radial.x);
-    float radialWeight = smoothstep(0.08, 0.38, length(fromCenter));
-    vec2 wave = vec2(
-            sin(screenUv.y * 9.0 + screenUv.x * 6.0),
-            cos(screenUv.x * 8.0 - screenUv.y * 5.0)
-    );
+    float radialWeight = smoothstep(0.02, 0.40, length(fromCenter));
+
     vec2 pixel = 1.0 / max(screenSize, vec2(1.0));
-    // Do not apply a constant offset in the center: the liquid movement is
-    // deliberately confined to the smooth perimeter band.
     float innerWeight = innerEdge * radialWeight * step(0.5, innerBlur);
     float perimeterWeight = edge * radialWeight;
-    float refraction = distortion * perimeterWeight + innerDistortion * innerWeight;
-    vec2 offset = (wave * 0.24 + radial * 0.76)
-            * refraction * pixel;
+    float refraction = distortion * perimeterWeight * 1.6 + innerDistortion * innerWeight;
 
+    vec2 offset = radial * refraction * pixel;
+
+    // Real Chromatic Dispersion Prism Effect
+    float dispAmount = refraction * 0.0022;
+    vec3 dispersed = sampleChromatic(screenUv + offset, radial, dispAmount, pixel);
     vec3 blurred = smoothBackdrop(screenUv + offset, pixel);
-    // Refract the already blurred backdrop in several directions near the edge.
+    vec3 baseGlass = mix(dispersed, blurred, clamp(innerEdge * 0.65, 0.0, 1.0));
+
+    // Multi-directional caustic refraction near edges
     if (innerEdge > 0.001 && innerBlur > 0.5) {
-        float edgeDistortion = innerDistortion * (0.28 + innerEdge * 0.72);
+        float edgeDistortion = innerDistortion * (0.35 + innerEdge * 0.65);
         vec2 edgeOffset = edgeDistortion * pixel;
         vec2 radialOffset = radial * edgeOffset * radialWeight;
-        vec2 tangentOffset = tangent * edgeOffset * 0.65 * radialWeight;
+        vec2 tangentOffset = tangent * edgeOffset * 0.7 * radialWeight;
         vec3 edgeBlur = smoothBackdrop(screenUv + offset + radialOffset, pixel);
         edgeBlur += smoothBackdrop(screenUv + offset - radialOffset, pixel);
         edgeBlur += smoothBackdrop(screenUv + offset + tangentOffset, pixel);
         edgeBlur += smoothBackdrop(screenUv + offset - tangentOffset, pixel);
-        blurred = mix(blurred, edgeBlur * 0.25, innerEdge * 0.70);
+        baseGlass = mix(baseGlass, edgeBlur * 0.25, innerEdge * 0.55);
     }
 
-    float topShine = clamp(1.0 - (localPoint.y / max(halfSize.y, 1.0) + 1.0) * 0.5, 0.0, 1.0);
-    vec3 color = mix(blurred, tintColor.rgb, tintColor.a);
-    vec3 edgeColor = mix(vec3(1.0), tintColor.rgb, 0.28);
-    color += edgeColor * edge * topShine * shine * 0.15;
-    color -= vec3(0.04, 0.06, 0.10) * edge * (1.0 - topShine) * shine * 0.06;
+    // Smooth glass tint blending with refracted background
+    vec3 color = mix(baseGlass, tintColor.rgb, tintColor.a);
+    
+    // Soft organic specular glint without white border line
+    if (shine > 0.001) {
+        vec2 lightSource = normalize(vec2(-0.45, -0.85));
+        float rimDot = max(0.0, dot(radial, lightSource));
+        float specular = pow(rimDot, 12.0) * edge * shine * 0.20;
+        color += tintColor.rgb * specular;
+    }
 
     fragColor = vec4(clamp(color, 0.0, 1.0), mask * opacity);
 }

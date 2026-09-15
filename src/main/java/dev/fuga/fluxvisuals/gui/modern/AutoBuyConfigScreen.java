@@ -6,6 +6,7 @@ import dev.fuga.fluxvisuals.modules.visual.AutoBuy;
 import dev.fuga.fluxvisuals.modules.visual.ItemResorter;
 import dev.fuga.fluxvisuals.render.Render2D;
 import dev.fuga.fluxvisuals.render.liqvid.BlurRenderer;
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.MinecraftClient;
@@ -37,23 +38,41 @@ public final class AutoBuyConfigScreen extends Screen {
     private static final float CARD_PADDING     = 12.0F; // Symmetrical inner padding for cards
     private static final float ROW_HEIGHT       = 32.0F; // Standard row height for toggle rows
 
-    // Deep obsidian & matte dark palette
-    private static final int SURFACE_WINDOW       = 0xFF0A0C10;
-    private static final int SURFACE_PANEL        = 0xFF0E1015;
-    private static final int SURFACE_INPUT        = 0xFF07080B;
-    private static final int BORDER_PANEL         = 0xFF181B24;
-    private static final int BORDER_INPUT         = 0xFF1E222D;
-    private static final int BORDER_FOCUS         = 0xFF7C3AED;
-    private static final int DIVIDER_LINE         = 0xFF13151D;
-    private static final int CHIP_BG              = 0xFF13161F;
-    private static final int CHIP_BORDER          = 0xFF202534;
-    private static final int TEXT_PRIMARY         = 0xFFD2D6E2;
-    private static final int TEXT_SECONDARY       = 0xFF727B90;
-    private static final int TEXT_MUTED           = 0xFF4A5264;
-    private static final int ACCENT_PURPLE        = 0xFF7C3AED;
-    private static final int ACCENT_PURPLE_HOVER  = 0xFF8B5CF6;
-    private static final int TOGGLE_OFF           = 0xFF1C202C;
+    // Deep obsidian & glass-matched palette (matching ModernGui2 / ClickGUI)
+    private static final int SURFACE_WINDOW       = 0x50030406;
+    private static final int SURFACE_PANEL        = 0x9007090D;
+    private static final int SURFACE_INPUT        = 0xFF0A0D14;
+    private static final int BORDER_PANEL         = 0x14FFFFFF;
+    private static final int BORDER_INPUT         = 0x14FFFFFF;
+    private static final int DIVIDER_LINE         = 0x12FFFFFF;
+    private static final int CHIP_BG              = 0xCC101420;
+    private static final int CHIP_BORDER          = 0x20FFFFFF;
+    private static final int TEXT_PRIMARY         = 0xFFD8DCE6;
+    private static final int TEXT_SECONDARY       = 0xFF7D8390;
+    private static final int TEXT_MUTED           = 0xFF4E5362;
+    private static final int TOGGLE_OFF           = 0xFF14161E;
     private static final int DANGER_HOVER         = 0xFFEF4444;
+
+    private int getAccentColor() {
+        int col = ModernClickGuiRenderer.getAccentColor();
+        if (col == 0xFF416474 || col == 0xFF00E5FF || col == 0xFF5865F2) {
+            return 0xFF5C7CFA;
+        }
+        return col;
+    }
+
+    private int getAccentHoverColor() {
+        int col = getAccentColor();
+        int r = Math.min(255, ((col >> 16) & 0xFF) + 20);
+        int g = Math.min(255, ((col >> 8) & 0xFF) + 20);
+        int b = Math.min(255, (col & 0xFF) + 20);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    private int color(int hex, float alpha) {
+        int a = (int) (((hex >> 24) & 0xFF) * alpha);
+        return (hex & 0x00FFFFFF) | (a << 24);
+    }
 
     private final Screen parentScreen;
 
@@ -487,9 +506,18 @@ public final class AutoBuyConfigScreen extends Screen {
             scrollY = maxScrollY;
         }
 
-        // 3. Window Container
-        Render2D.drawRound(context, winX, winY, winW, winH, 10.0F, SURFACE_WINDOW);
-        Render2D.drawRoundOutline(context, winX, winY, winW, winH, 10.0F, 1.0F, BORDER_PANEL);
+        // 3. Window Container (Liquid Glass substrate matching ModernGui2 ClickGUI)
+        Render2D.drawShadow(context, winX, winY, winW, winH, 30.0F, 14.0F, 0x95000000);
+        Color winGlassTint = new Color(4, 5, 8, 212);
+        BlurRenderer.drawLiquidGlass(
+                context,
+                winX, winY, winW, winH, 12.0F,
+                winGlassTint, 1.0F,
+                1.4F, 1.2F, 0.0F,
+                1.0F, 0.8F, true
+        );
+        Render2D.drawRound(context, winX, winY, winW, winH, 12.0F, SURFACE_WINDOW);
+        Render2D.drawRoundOutline(context, winX, winY, winW, winH, 12.0F, 1.0F, 0x18FFFFFF);
 
         // 4. Scrollable Content
         Render2D.pushScissor(winX + 2.0F, clipTop, winW - 4.0F, clipHeight);
@@ -512,10 +540,10 @@ public final class AutoBuyConfigScreen extends Screen {
 
             Render2D.drawRound(context, scrollTrackX, scrollTrackY, 3.0F, scrollTrackH, 1.5F, 0x22171B26);
             Render2D.drawRound(context, scrollTrackX, thumbY, 3.0F, thumbH, 1.5F,
-                    scrollThumbDragging ? ACCENT_PURPLE : 0xFF353C4E);
+                    scrollThumbDragging ? getAccentColor() : 0xFF353C4E);
         }
 
-        // 6. Solid Header & Footer
+        // 6. Header & Footer (integrated with liquid glass)
         renderHeader(context, winX, winY, winW, headerH, mouseX, mouseY);
         renderFooter(context, winX, footerY, winW, footerH, mouseX, mouseY);
 
@@ -528,8 +556,6 @@ public final class AutoBuyConfigScreen extends Screen {
     }
 
     private void renderHeader(DrawContext context, float x, float y, float w, float h, int mouseX, int mouseY) {
-        Render2D.drawRound(context, x, y, w, h, 10.0F, 10.0F, 0.0F, 0.0F, SURFACE_WINDOW);
-
         drawTexture(context, ICON_AUTOBUY, x + 14.0F, y + 12.0F, 20.0F, 20.0F, 0xFFFFFFFF);
         ModernFont.draw(context, "Автобай", x + 40.0F, y + 11.0F, 11.5F, TEXT_PRIMARY, ModernFont.Type.SF_BOLD);
         ModernFont.draw(context, "Конфигурация авто-покупки", x + 40.0F, y + 24.5F, 8.5F, TEXT_SECONDARY, ModernFont.Type.INTER_MEDIUM);
@@ -550,7 +576,6 @@ public final class AutoBuyConfigScreen extends Screen {
     }
 
     private void renderFooter(DrawContext context, float x, float y, float w, float h, int mouseX, int mouseY) {
-        Render2D.drawRound(context, x, y, w, h, 0.0F, 0.0F, 10.0F, 10.0F, SURFACE_WINDOW);
         Render2D.drawRound(context, x + 10.0F, y, w - 20.0F, 1.0F, 0.0F, DIVIDER_LINE);
 
         float resetX = x + 14.0F;
@@ -572,7 +597,7 @@ public final class AutoBuyConfigScreen extends Screen {
 
         boolean cancelHover = inside(mouseX, mouseY, cancelX, cancelY, cancelW, btnH);
         cancelHoverAnim = approach(cancelHoverAnim, cancelHover ? 1.0F : 0.0F, 0.2F);
-        int cancelBg = blend(0xFF141720, 0xFF1C202C, cancelHoverAnim);
+        int cancelBg = blend(0x80141720, 0xAA1C202C, cancelHoverAnim);
         int cancelText = blend(TEXT_SECONDARY, TEXT_PRIMARY, cancelHoverAnim);
 
         Render2D.drawRound(context, cancelX, cancelY, cancelW, btnH, 5.0F, cancelBg);
@@ -581,7 +606,7 @@ public final class AutoBuyConfigScreen extends Screen {
 
         boolean saveHover = inside(mouseX, mouseY, saveX, saveY, saveW, btnH);
         saveHoverAnim = approach(saveHoverAnim, saveHover ? 1.0F : 0.0F, 0.2F);
-        int saveBg = blend(ACCENT_PURPLE, ACCENT_PURPLE_HOVER, saveHoverAnim);
+        int saveBg = blend(getAccentColor(), getAccentHoverColor(), saveHoverAnim);
 
         Render2D.drawRound(context, saveX, saveY, saveW, btnH, 5.0F, saveBg);
         ModernFont.drawCentered(context, "Сохранить", saveX + saveW * 0.5F, saveY + 7.5F, 9.0F, 0xFFFFFFFF, ModernFont.Type.SF_BOLD);
@@ -602,13 +627,13 @@ public final class AutoBuyConfigScreen extends Screen {
             boolean dropHover = inside(mouseX, mouseY, dropX, dropY, dropW, dropH);
             Render2D.drawRound(context, dropX, dropY, dropW, dropH, 4.0F, dropHover ? 0xFF161922 : 0xFF0B0D12);
             Render2D.drawRoundOutline(context, dropX, dropY, dropW, dropH, 4.0F, 1.0F,
-                    categoryDropdownOpen ? ACCENT_PURPLE : BORDER_INPUT);
+                    categoryDropdownOpen ? getAccentColor() : BORDER_INPUT);
 
             drawTexture(context, ICON_COMBAT, dropX + 7.0F, dropY + 5.5F, 11.0F, 11.0F,
-                    categoryDropdownOpen ? ACCENT_PURPLE_HOVER : TEXT_PRIMARY);
+                    categoryDropdownOpen ? getAccentHoverColor() : TEXT_PRIMARY);
             ModernFont.draw(context, category, dropX + 22.0F, dropY + 6.5F, 9.0F, TEXT_PRIMARY, ModernFont.Type.SF_BOLD);
             ModernFont.drawRight(context, categoryDropdownOpen ? "▲" : "▼", dropX + dropW - 7.0F, dropY + 6.5F, 8.0F,
-                    categoryDropdownOpen ? ACCENT_PURPLE : TEXT_SECONDARY, ModernFont.Type.SF_BOLD);
+                    categoryDropdownOpen ? getAccentColor() : TEXT_SECONDARY, ModernFont.Type.SF_BOLD);
         }
     }
 
@@ -625,8 +650,8 @@ public final class AutoBuyConfigScreen extends Screen {
 
         Render2D.pushScissor(dropX - 1.0F, dropY - 1.0F, dropW + 2.0F, currentH + 2.0F);
 
-        Render2D.drawRound(context, dropX, dropY, dropW, totalMenuH, 5.0F, 0xFF0E1016);
-        Render2D.drawRoundOutline(context, dropX, dropY, dropW, totalMenuH, 5.0F, 1.0F, ACCENT_PURPLE);
+        Render2D.drawRound(context, dropX, dropY, dropW, totalMenuH, 5.0F, 0xF8040507);
+        Render2D.drawRoundOutline(context, dropX, dropY, dropW, totalMenuH, 5.0F, 1.0F, getAccentColor());
 
         float itemY = dropY + 2.0F;
         for (String cat : categories) {
@@ -634,7 +659,7 @@ public final class AutoBuyConfigScreen extends Screen {
             boolean selected = cat.equalsIgnoreCase(category);
             if (itemHover || selected) {
                 Render2D.drawRound(context, dropX + 2.0F, itemY, dropW - 4.0F, 20.0F, 3.0F,
-                        selected ? 0xFF261D3E : 0xFF171A24);
+                        selected ? color(getAccentColor(), 0.25F) : 0x18FFFFFF);
             }
             ModernFont.draw(context, cat, dropX + 8.0F, itemY + 5.5F, 8.5F,
                     selected ? 0xFFFFFFFF : (itemHover ? TEXT_PRIMARY : TEXT_SECONDARY),
@@ -675,7 +700,7 @@ public final class AutoBuyConfigScreen extends Screen {
 
             Render2D.drawRound(context, inputX, inputY, inputW, inputH, 4.0F, SURFACE_INPUT);
             Render2D.drawRoundOutline(context, inputX, inputY, inputW, inputH, 4.0F, 1.0F,
-                    isFocused ? BORDER_FOCUS : (hover ? 0xFF2A2E3D : BORDER_INPUT));
+                    isFocused ? getAccentColor() : (hover ? 0x2AFFFFFF : BORDER_INPUT));
 
             String displayText = formatNumber(priceInput) + (isFocused ? "_" : "");
             ModernFont.draw(context, displayText, inputX + 6.0F, inputY + 5.5F, 8.5F,
@@ -701,10 +726,10 @@ public final class AutoBuyConfigScreen extends Screen {
             float sliderX = percentX - 10.0F - sliderW;
             float sliderY = r2Y + 14.0F;
 
-            Render2D.drawRound(context, sliderX, sliderY, sliderW, sliderH, 2.0F, 0xFF191C25);
+            Render2D.drawRound(context, sliderX, sliderY, sliderW, sliderH, 2.0F, 0xFF14161E);
             float fillW = sliderW * (minDurabilityPercent / 100.0F);
             if (fillW > 0.0F) {
-                Render2D.drawRound(context, sliderX, sliderY, fillW, sliderH, 2.0F, ACCENT_PURPLE);
+                Render2D.drawRound(context, sliderX, sliderY, fillW, sliderH, 2.0F, getAccentColor());
             }
             float knobR = 4.0F;
             float knobX = sliderX + fillW;
@@ -730,7 +755,7 @@ public final class AutoBuyConfigScreen extends Screen {
             float innerW = w - CARD_PADDING * 2.0F;
 
             // Needed Header
-            ModernFont.draw(context, "Обязательные чары", innerX, neededHeaderY + 1.0F, 9.0F, 0xFFA78BFA, ModernFont.Type.SF_BOLD);
+            ModernFont.draw(context, "Обязательные чары", innerX, neededHeaderY + 1.0F, 9.0F, getAccentColor(), ModernFont.Type.SF_BOLD);
 
             // Needed Chips
             for (int i = 0; i < neededChipRects.size(); i++) {
@@ -749,7 +774,7 @@ public final class AutoBuyConfigScreen extends Screen {
             float inputH = 21.0F;
             boolean isNeededFocused = focusedField == FocusField.NEEDED;
             Render2D.drawRound(context, innerX, neededInputY, inputW, inputH, 4.0F, SURFACE_INPUT);
-            Render2D.drawRoundOutline(context, innerX, neededInputY, inputW, inputH, 4.0F, 1.0F, isNeededFocused ? BORDER_FOCUS : BORDER_INPUT);
+            Render2D.drawRoundOutline(context, innerX, neededInputY, inputW, inputH, 4.0F, 1.0F, isNeededFocused ? getAccentColor() : BORDER_INPUT);
 
             String nPlaceholder = neededInput.isEmpty() ? "+ Добавить чары..." : neededInput + (isNeededFocused ? "_" : "");
             ModernFont.draw(context, nPlaceholder, innerX + 6.0F, neededInputY + 5.5F, 8.0F,
@@ -781,7 +806,7 @@ public final class AutoBuyConfigScreen extends Screen {
             // Ignored Input Row
             boolean isIgnoredFocused = focusedField == FocusField.IGNORED;
             Render2D.drawRound(context, innerX, ignoredInputY, inputW, inputH, 4.0F, SURFACE_INPUT);
-            Render2D.drawRoundOutline(context, innerX, ignoredInputY, inputW, inputH, 4.0F, 1.0F, isIgnoredFocused ? BORDER_FOCUS : BORDER_INPUT);
+            Render2D.drawRoundOutline(context, innerX, ignoredInputY, inputW, inputH, 4.0F, 1.0F, isIgnoredFocused ? getAccentColor() : BORDER_INPUT);
 
             String ignPlaceholder = ignoredInput.isEmpty() ? "+ Игнорировать чары..." : ignoredInput + (isIgnoredFocused ? "_" : "");
             ModernFont.draw(context, ignPlaceholder, innerX + 6.0F, ignoredInputY + 5.5F, 8.0F,
@@ -840,7 +865,7 @@ public final class AutoBuyConfigScreen extends Screen {
 
                 boolean isFocused = focusedField == FocusField.ANARCHY;
                 Render2D.drawRound(context, innerX, anarchyInputY, 80.0F, 20.0F, 3.0F, SURFACE_INPUT);
-                Render2D.drawRoundOutline(context, innerX, anarchyInputY, 80.0F, 20.0F, 3.0F, 1.0F, isFocused ? BORDER_FOCUS : BORDER_INPUT);
+                Render2D.drawRoundOutline(context, innerX, anarchyInputY, 80.0F, 20.0F, 3.0F, 1.0F, isFocused ? getAccentColor() : BORDER_INPUT);
 
                 String placeholder = anarchyInput.isEmpty() ? "+ Номер..." : anarchyInput + (isFocused ? "_" : "");
                 ModernFont.draw(context, placeholder, innerX + 5.0F, anarchyInputY + 5.5F, 8.0F,
@@ -870,7 +895,7 @@ public final class AutoBuyConfigScreen extends Screen {
 
                 boolean isFocused = focusedField == FocusField.AD_TEXT;
                 Render2D.drawRound(context, innerX, adFieldY, innerW, 20.0F, 4.0F, SURFACE_INPUT);
-                Render2D.drawRoundOutline(context, innerX, adFieldY, innerW, 20.0F, 4.0F, 1.0F, isFocused ? BORDER_FOCUS : BORDER_INPUT);
+                Render2D.drawRoundOutline(context, innerX, adFieldY, innerW, 20.0F, 4.0F, 1.0F, isFocused ? getAccentColor() : BORDER_INPUT);
 
                 String placeholder = anarchyAdText.isEmpty() ? "Текст рекламы в чат анархии..." : anarchyAdText + (isFocused ? "_" : "");
                 ModernFont.draw(context, placeholder, innerX + 6.0F, adFieldY + 5.5F, 8.5F,
@@ -917,7 +942,7 @@ public final class AutoBuyConfigScreen extends Screen {
             float inputH = 21.0F;
             boolean isFocused = focusedField == FocusField.BANNED;
             Render2D.drawRound(context, innerX, bannedInputY, inputW, inputH, 4.0F, SURFACE_INPUT);
-            Render2D.drawRoundOutline(context, innerX, bannedInputY, inputW, inputH, 4.0F, 1.0F, isFocused ? BORDER_FOCUS : BORDER_INPUT);
+            Render2D.drawRoundOutline(context, innerX, bannedInputY, inputW, inputH, 4.0F, 1.0F, isFocused ? getAccentColor() : BORDER_INPUT);
 
             String placeholder = bannedInput.isEmpty() ? "+ Ник игрока..." : bannedInput + (isFocused ? "_" : "");
             ModernFont.draw(context, placeholder, innerX + 6.0F, bannedInputY + 5.5F, 8.0F,
@@ -931,8 +956,8 @@ public final class AutoBuyConfigScreen extends Screen {
     }
 
     private void drawCompactToggle(DrawContext context, float x, float y, float w, float h, float anim, boolean hover) {
-        int bgOff = hover ? 0xFF242938 : TOGGLE_OFF;
-        int bgOn = hover ? ACCENT_PURPLE_HOVER : ACCENT_PURPLE;
+        int bgOff = hover ? 0xFF1E222D : TOGGLE_OFF;
+        int bgOn = hover ? getAccentHoverColor() : getAccentColor();
         int currentBg = blend(bgOff, bgOn, anim);
 
         Render2D.drawRound(context, x, y, w, h, h * 0.5F, currentBg);

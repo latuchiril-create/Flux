@@ -54,6 +54,11 @@ public abstract class MouseMixin {
 
         if (FluxVisualsClient.MODULE_MANAGER.getTargetHud().handleMouse(client, mouseX, mouseY, button, action)) {
             ci.cancel();
+            return;
+        }
+
+        if (FluxVisualsClient.MODULE_MANAGER.getTestHud().handleMouse(client, mouseX, mouseY, button, action)) {
+            ci.cancel();
         }
     }
 
@@ -64,6 +69,7 @@ public abstract class MouseMixin {
             return;
         }
         FluxVisualsClient.MODULE_MANAGER.getTargetHud().handleMouseMove(client, x, y);
+        FluxVisualsClient.MODULE_MANAGER.getTestHud().handleMouseMove(client, x, y);
     }
 
     @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)

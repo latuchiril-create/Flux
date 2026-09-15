@@ -59,6 +59,7 @@ public final class AimBot extends Module {
     private boolean aimPitch = true;
     private boolean stickyTarget = true;
     private boolean checkWalls = true;
+    private boolean includeInvisible = true;
     private boolean onlyOnAttack = false;
     private boolean requireAimKey = false;
     private int aimKey = 0;
@@ -177,55 +178,68 @@ public final class AimBot extends Module {
             return;
         }
 
-        // positional low-pass: kills per-frame jumping of the aim point
-        float pointAlpha = 1.0F - (float) Math.exp(-22.0F * dt);
+        // positional low-pass: dynamically scales tracking responsiveness with speed
+        float pointTrackingSpeed = Math.max(22.0F, Math.max(yawSpeed, pitchSpeed) * 3.0F);
+        float pointAlpha = 1.0F - (float) Math.exp(-pointTrackingSpeed * dt);
         smoothPoint = lerpVec(smoothPoint, rawPoint, pointAlpha);
 
         updateNoise(dt);
 
         float[] desired = calcYawPitch(eye, smoothPoint);
-        float yawDelta = wrapDegrees(desired[0] + noiseYaw - player.getYaw());
-        float pitchDelta = desired[1] + noisePitch - player.getPitch();
-
-        // turn commitment: near +-180 deg the wrap sign flips every frame and
-        // the aim oscillates instead of turning; commit to one side until close
-        if (Math.abs(yawDelta) < 90.0F) {
-            turnDir = 0;
-        } else if (turnDir == 0) {
-            turnDir = yawDelta > 0.0F ? 1 : -1;
-        } else if (turnDir > 0 && yawDelta < -90.0F) {
-            yawDelta += 360.0F;
-        } else if (turnDir < 0 && yawDelta > 90.0F) {
-            yawDelta -= 360.0F;
-        }
+        float yawDelta = MathHelper.wrapDegrees(desired[0] + noiseYaw - player.getYaw());
+        float targetPitch = MathHelper.clamp(desired[1] + noisePitch, -90.0F, 90.0F);
+        float pitchDelta = targetPitch - player.getPitch();
 
         // deadzone: ignore tiny deltas to avoid robotic micro shake
-        if (Math.abs(yawDelta) < deadzone) yawDelta = 0.0F;
-        if (Math.abs(pitchDelta) < deadzone) pitchDelta = 0.0F;
-        if (yawDelta == 0.0F && pitchDelta == 0.0F) {
+        if (Math.abs(yawDelta) < deadzone && Math.abs(pitchDelta) < deadzone) {
             return;
         }
 
-        // far turns go at constant capped speed (fast flicks behind),
-        // close range eases exponentially for a smooth human landing
-        float yawLambda = 2.0F + yawSpeed * 1.35F;
-        float pitchLambda = 2.0F + pitchSpeed * 1.35F;
-        float yawStep = Math.abs(yawDelta) > 60.0F
-                ? Math.signum(yawDelta) * Math.min(Math.abs(yawDelta), maxSpeed * dt)
-                : yawDelta * (1.0F - (float) Math.exp(-yawLambda * dt));
-        float pitchStep = Math.abs(pitchDelta) > 60.0F
-                ? Math.signum(pitchDelta) * Math.min(Math.abs(pitchDelta), maxSpeed * dt)
-                : pitchDelta * (1.0F - (float) Math.exp(-pitchLambda * dt));
+        // smooth continuous critically-damped rotation (no overshoot oscillation)
+        float yawLambda = Math.max(1.0F, 1.5F + yawSpeed * 1.55F);
+        float pitchLambda = Math.max(1.0F, 1.5F + pitchSpeed * 1.55F);
+        float effectiveMaxDegPerSec = Math.max(360.0F, Math.max(yawSpeed, pitchSpeed) * 45.0F);
+        float maxFrameStep = effectiveMaxDegPerSec * dt;
 
-        // cap max deg/sec so fast flicks look human
-        float maxStep = maxSpeed * dt;
-        yawStep = MathHelper.clamp(yawStep, -maxStep, maxStep);
-        pitchStep = MathHelper.clamp(pitchStep, -maxStep, maxStep);
+        float yawRate = 1.0F - (float) Math.exp(-yawLambda * dt);
+        float pitchRate = 1.0F - (float) Math.exp(-pitchLambda * dt);
 
-        if (aimYaw) {
+        float yawStep = yawDelta * yawRate;
+        float pitchStep = pitchDelta * pitchRate;
+
+        // Ensure non-zero minimum speed for distant turns so large flicks don't stall
+        float minYawStep = Math.min(Math.abs(yawDelta), Math.max(18.0F, yawSpeed * 2.2F) * dt);
+        if (Math.abs(yawStep) < minYawStep && Math.abs(yawDelta) > 0.5F) {
+            yawStep = Math.signum(yawDelta) * minYawStep;
+        }
+        float minPitchStep = Math.min(Math.abs(pitchDelta), Math.max(18.0F, pitchSpeed * 2.2F) * dt);
+        if (Math.abs(pitchStep) < minPitchStep && Math.abs(pitchDelta) > 0.5F) {
+            pitchStep = Math.signum(pitchDelta) * minPitchStep;
+        }
+
+        // Strict clamp against frame max rate
+        yawStep = MathHelper.clamp(yawStep, -maxFrameStep, maxFrameStep);
+        pitchStep = MathHelper.clamp(pitchStep, -maxFrameStep, maxFrameStep);
+
+        // Strict anti-overshoot clamp (prevents camera jittering / oscillating back and forth)
+        if (Math.abs(yawStep) > Math.abs(yawDelta)) {
+            yawStep = yawDelta;
+        }
+        if (Math.abs(pitchStep) > Math.abs(pitchDelta)) {
+            pitchStep = pitchDelta;
+        }
+
+        if (Math.abs(yawDelta) < deadzone) {
+            yawStep = 0.0F;
+        }
+        if (Math.abs(pitchDelta) < deadzone) {
+            pitchStep = 0.0F;
+        }
+
+        if (aimYaw && Math.abs(yawStep) > 0.0001F) {
             player.setYaw(player.getYaw() + yawStep);
         }
-        if (aimPitch) {
+        if (aimPitch && Math.abs(pitchStep) > 0.0001F) {
             player.setPitch(MathHelper.clamp(player.getPitch() + pitchStep, -90.0F, 90.0F));
         }
     }
@@ -291,6 +305,7 @@ public final class AimBot extends Module {
     private boolean allows(MinecraftClient client, ClientPlayerEntity player, Entity e) {
         if (e == null || e == player || e.isRemoved() || !e.canHit()) return false;
         if (e instanceof LivingEntity living && !living.isAlive()) return false;
+        if (!includeInvisible && (e.isInvisible() || e.isInvisibleTo(player))) return false;
         if (e instanceof PlayerEntity pe) {
             if (pe == player) return false;
             if (targets == Targets.MOBS) return false;
@@ -348,9 +363,9 @@ public final class AimBot extends Module {
     public float getDistance() { return distance; }
     public void setDistance(float v) { distance = MathHelper.clamp(v, 2.0F, 10.0F); FluxVisualsClient.requestConfigSave(); }
     public float getYawSpeed() { return yawSpeed; }
-    public void setYawSpeed(float v) { yawSpeed = MathHelper.clamp(v, 1.0F, 30.0F); FluxVisualsClient.requestConfigSave(); }
+    public void setYawSpeed(float v) { yawSpeed = MathHelper.clamp(v, 1.0F, 100.0F); FluxVisualsClient.requestConfigSave(); }
     public float getPitchSpeed() { return pitchSpeed; }
-    public void setPitchSpeed(float v) { pitchSpeed = MathHelper.clamp(v, 1.0F, 30.0F); FluxVisualsClient.requestConfigSave(); }
+    public void setPitchSpeed(float v) { pitchSpeed = MathHelper.clamp(v, 1.0F, 100.0F); FluxVisualsClient.requestConfigSave(); }
     public float getHumanize() { return humanize; }
     public void setHumanize(float v) { humanize = MathHelper.clamp(v, 0.0F, 100.0F); FluxVisualsClient.requestConfigSave(); }
     public float getMaxSpeed() { return maxSpeed; }
@@ -367,6 +382,8 @@ public final class AimBot extends Module {
     public void setStickyTarget(boolean v) { stickyTarget = v; FluxVisualsClient.requestConfigSave(); }
     public boolean isCheckWalls() { return checkWalls; }
     public void setCheckWalls(boolean v) { checkWalls = v; FluxVisualsClient.requestConfigSave(); }
+    public boolean isIncludeInvisible() { return includeInvisible; }
+    public void setIncludeInvisible(boolean v) { includeInvisible = v; FluxVisualsClient.requestConfigSave(); }
     public boolean isOnlyOnAttack() { return onlyOnAttack; }
     public void setOnlyOnAttack(boolean v) { onlyOnAttack = v; FluxVisualsClient.requestConfigSave(); }
     public boolean isRequireAimKey() { return requireAimKey; }

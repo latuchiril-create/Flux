@@ -48,6 +48,7 @@ public final class MsdfFont {
     private float ascender = 0.95F;
     private float descender = -0.25F;
     private boolean loaded = false;
+    private boolean atlasFilteringConfigured = false;
 
     // Pre-allocated dynamic vertex buffer for text batching
     private static int textVao = -1;
@@ -442,6 +443,13 @@ public final class MsdfFont {
     private int getTextureGlId() {
         AbstractTexture tex = MinecraftClient.getInstance().getTextureManager().getTexture(textureId);
         if (tex != null && tex.getGlTexture() instanceof GlTexture glTex) {
+            // MSDF stores distance data across RGB channels. Linear sampling
+            // is required to reconstruct a clean edge between texels; nearest
+            // sampling produces jagged, colour-fringed icon contours.
+            if (!atlasFilteringConfigured) {
+                tex.setFilter(true, false);
+                atlasFilteringConfigured = true;
+            }
             return glTex.getGlId();
         }
         return 0;

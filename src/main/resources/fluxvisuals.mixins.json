@@ -12,6 +12,7 @@
     "BubbleColumnBlockMixin",
     "CameraMixin",
     "ChatInputSuggestorMixin",
+    "ChatScreenMixin",
     "ClientCommonNetworkHandlerMixin",
     "DrawContextMixin",
     "ClientConnectionMixin",

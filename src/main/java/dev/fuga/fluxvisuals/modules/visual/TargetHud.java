@@ -20,6 +20,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gl.SimpleFramebuffer;
@@ -140,7 +141,9 @@ public final class TargetHud extends Module {
         if (!isEnabled() || context == null || client == null || client.player == null) {
             return;
         }
-        if (client.currentScreen != null && !(client.currentScreen instanceof ChatScreen)) {
+        if (client.currentScreen != null
+                && !(client.currentScreen instanceof ChatScreen)
+                && !(client.currentScreen instanceof InventoryScreen)) {
             return;
         }
         LivingEntity target = currentTarget(client);

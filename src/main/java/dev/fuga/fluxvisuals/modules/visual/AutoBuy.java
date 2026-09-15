@@ -734,7 +734,7 @@ public final class AutoBuy extends Module {
             lowBalanceMode = false;
             storageCheckPending = false;
             resellStorageOpenRequested = false;
-            hubSafetyStorageCheckPending = isEnabled() && isBalanceBelowConfiguredPrice();
+            hubSafetyStorageCheckPending = false;
             resetLowBalanceNotifications();
         } else if (isBalanceBelowConfiguredPrice()) {
             hubSafetyStorageCheckPending = false;
@@ -989,7 +989,7 @@ public final class AutoBuy extends Module {
             enterLowBalanceMode(client, now, reason == MoneyCheckReason.STARTUP);
         } else {
             lowBalanceMode = false;
-            hubSafetyStorageCheckPending = !lowBalanceGuardEnabled && isBalanceBelowConfiguredPrice();
+            hubSafetyStorageCheckPending = false;
             restartSearch(client, now);
         }
     }
@@ -1010,7 +1010,6 @@ public final class AutoBuy extends Module {
             return;
         }
 
-        closeCurrentScreen(client);
         if (resellStorageOpenRequested) {
             startResell(client, now, true);
             return;
@@ -1024,7 +1023,11 @@ public final class AutoBuy extends Module {
             return;
         }
         if (now >= nextLowBalanceMoneyCheckAt) {
-            requestMoneyCheck(client, now, MoneyCheckReason.LOW_BALANCE_RECHECK);
+            refreshBalanceFromScoreboard(client, now);
+            nextLowBalanceMoneyCheckAt = now + randomDelay(
+                    LOW_BALANCE_MONEY_RECHECK_MIN_MS,
+                    LOW_BALANCE_MONEY_RECHECK_MAX_MS
+            );
             return;
         }
         if (shouldSwitchAnarchy(now)) {
@@ -1574,9 +1577,17 @@ public final class AutoBuy extends Module {
         }
         if (step == Step.RESELL_FINISH) {
             if (now >= nextActionAt) {
-                LOGGER.info("AutoBuy: resale completed, returning to auction search");
-                closeCurrentScreen(client);
-                restartSearch(client, now);
+                if (lowBalanceGuardEnabled && isBalanceBelowConfiguredPrice()) {
+                    LOGGER.info("AutoBuy: resale completed, staying on auction in low-balance mode");
+                    step = Step.RESELL_WAIT_NEXT;
+                    nextResellAt = now + randomDelay(LOW_BALANCE_MONEY_RECHECK_MIN_MS, LOW_BALANCE_MONEY_RECHECK_MAX_MS);
+                    nextActionAt = now + LOW_BALANCE_IDLE_DELAY_MS;
+                    timeoutAt = now + RESELL_TIMEOUT_MS;
+                } else {
+                    LOGGER.info("AutoBuy: resale completed, returning to auction search");
+                    closeCurrentScreen(client);
+                    restartSearch(client, now);
+                }
             }
             return;
         }
@@ -1887,7 +1898,6 @@ public final class AutoBuy extends Module {
 
     private void enterLowBalanceMode(MinecraftClient client, long now, boolean forceStorageCheck) {
         lowBalanceMode = true;
-        closeCurrentScreen(client);
         pendingCandidateSlotId = -1;
         pendingPurchase = null;
         pendingPurchaseConfirmationSlotId = -1;
@@ -2091,7 +2101,7 @@ public final class AutoBuy extends Module {
         } else {
             lowBalanceMode = false;
             storageCheckPending = false;
-            hubSafetyStorageCheckPending = !lowBalanceGuardEnabled && balanceBelowPrice && isEnabled();
+            hubSafetyStorageCheckPending = false;
             if (isEnabled() && wasLowBalance && lowBalanceNotificationSent) {
                 FluxVisualsClient.MODULE_MANAGER.getTelegram().sendBalanceRecoveredMessage(lastKnownBalance);
             }

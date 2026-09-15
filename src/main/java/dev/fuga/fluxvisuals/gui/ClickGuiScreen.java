@@ -8,15 +8,22 @@ import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 public final class ClickGuiScreen extends Screen {
-    private final PremiumClickGuiRenderer renderer = new PremiumClickGuiRenderer();
+    private static PremiumClickGuiRenderer sessionRenderer;
+    private final PremiumClickGuiRenderer renderer;
+    private boolean initialized;
 
     public ClickGuiScreen(ModuleManager ignoredModuleManager) {
         super(Text.literal("FluxVisuals"));
+        if (sessionRenderer == null) sessionRenderer = new PremiumClickGuiRenderer();
+        renderer = sessionRenderer;
     }
 
     @Override
     protected void init() {
-        renderer.open();
+        if (!initialized) {
+            renderer.open();
+            initialized = true;
+        }
     }
 
     @Override
@@ -71,6 +78,12 @@ public final class ClickGuiScreen extends Screen {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public void removed() {
+        initialized = false;
+        super.removed();
     }
 
     @Override

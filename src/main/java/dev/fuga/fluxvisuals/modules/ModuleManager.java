@@ -102,6 +102,7 @@ public final class ModuleManager {
     private final ItemCrafter itemCrafter = new ItemCrafter();
     private final CaptchaSolver captchaSolver = new CaptchaSolver();
     private final NoJumpDelay noJumpDelay = new NoJumpDelay();
+    private final dev.fuga.fluxvisuals.modules.visual.TestHud testHud = new dev.fuga.fluxvisuals.modules.visual.TestHud();
 
     public ModuleManager() {
         register(fullBright);
@@ -119,6 +120,7 @@ public final class ModuleManager {
         register(blockOverlay);
         register(targetEsp);
         register(targetHud);
+        register(testHud);
         register(itemRadius);
         register(animations);
         register(tabCustomizer);
@@ -158,6 +160,7 @@ public final class ModuleManager {
     }
 
     public void onTick(MinecraftClient client) {
+        dev.fuga.fluxvisuals.gui.modern.setting.ColorSetting.updateAllSyncedColors();
         boolean skipGlobalAutomation = FluxVisualsClient.MULTI_BOT_MANAGER.shouldSkipGlobalAutomation();
         for (Module module : modules) {
             if (module == telegram) {
@@ -176,6 +179,7 @@ public final class ModuleManager {
     }
 
     public void onFrame(MinecraftClient client, float deltaSeconds) {
+        dev.fuga.fluxvisuals.gui.modern.setting.ColorSetting.updateAllSyncedColors();
         for (Module module : modules) {
             if (!module.isEnabled()) {
                 continue;
@@ -395,5 +399,9 @@ public final class ModuleManager {
 
     public NoJumpDelay getNoJumpDelay() {
         return noJumpDelay;
+    }
+
+    public dev.fuga.fluxvisuals.modules.visual.TestHud getTestHud() {
+        return testHud;
     }
 }

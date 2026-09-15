@@ -70,15 +70,18 @@ public class ShaderProgram {
     }
 
     public void bind() {
+        bind(null);
+    }
+
+    public void bind(Matrix4f customModelView) {
         if (!this.linked) {
             return;
         }
 
         GL30.glUseProgram(this.programId);
-        // 1.21.11: RenderSystem.getProjectionMatrix() is gone; LunaWare keeps its own
-        // HUD ortho matrices in ScreenScale.
+        // HUD ortho matrices in ScreenScale or custom matrix from DrawContext
         Matrix4f projection = ScreenScale.getProjectionMatrix();
-        Matrix4f modelView = ScreenScale.getModelViewMatrix();
+        Matrix4f modelView = (customModelView != null) ? customModelView : ScreenScale.getModelViewMatrix();
 
         matrixBuffer.clear();
         projection.get(matrixBuffer);

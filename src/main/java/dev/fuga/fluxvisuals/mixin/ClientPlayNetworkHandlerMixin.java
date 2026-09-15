@@ -274,7 +274,20 @@ public abstract class ClientPlayNetworkHandlerMixin {
         if (botManager == null || !botManager.hasManagedSessions()) {
             return; // no bots: boss bars stay 100% vanilla, untouched
         }
-        if (!fluxvisuals$isCurrentVisibleHandler()) {
+        BotSession packetSession = botManager.findSession((ClientPlayNetworkHandler) (Object) this);
+        BotSession contextSession = MultiBotManager.currentContextSession();
+        BotSession activeSession = botManager.getActiveSession();
+        // Never let a bot's packet mutate whichever HUD happens to be installed
+        // globally during a switch. It may only update its own detached HUD,
+        // or the HUD of the currently visible session.
+        if (packetSession != null && packetSession != activeSession && packetSession != contextSession) {
+            fluxvisuals$rerouteUiPacket(packet, ci);
+            ci.cancel();
+            return;
+        }
+        boolean detachedBossBarContext = contextSession != null
+                && (contextSession == packetSession || contextSession.getNetworkHandler() == (Object) this);
+        if (!detachedBossBarContext && !fluxvisuals$isCurrentVisibleHandler()) {
             fluxvisuals$rerouteUiPacket(packet, ci);
             ci.cancel();
             return;

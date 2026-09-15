@@ -404,6 +404,13 @@ public final class BotSession {
         }
     }
 
+    /** Drops detached bossbar state when a session is removed or disconnected. */
+    public void clearBossBars() {
+        if (inGameHud != null && inGameHud.getBossBarHud() != null) {
+            inGameHud.getBossBarHud().clear();
+        }
+    }
+
     public void clearTransientScreen() {
         if (!(screen instanceof HandledScreen<?>)) {
             screen = null;

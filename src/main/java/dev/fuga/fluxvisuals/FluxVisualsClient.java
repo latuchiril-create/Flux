@@ -5,6 +5,7 @@ import dev.fuga.fluxvisuals.baritone.BaritoneBridge;
 import dev.fuga.fluxvisuals.gui.ClickGuiScreen;
 import dev.fuga.fluxvisuals.gui.PremiumClickGuiRenderer;
 import dev.fuga.fluxvisuals.gui.modern.ModernClickGuiScreen;
+import dev.fuga.fluxvisuals.gui.modern.ModernGui2Screen;
 import dev.fuga.fluxvisuals.modules.ModuleManager;
 import dev.fuga.fluxvisuals.multibot.MultiBotManager;
 import dev.fuga.fluxvisuals.multibot.BotDebug;
@@ -23,6 +24,8 @@ public final class FluxVisualsClient implements ClientModInitializer {
     private static boolean suppressOpenGuiUntilRightShiftRelease;
     private static boolean rightShiftWasDown;
     private static boolean suppressOpenModernGuiUntilBackslashRelease;
+    private static boolean suppressOpenModernGuiUntilKeyRelease;
+    private static long lastGuiCloseTime = 0L;
     private static boolean backslashWasDown;
     private static long lastFrameNs = -1L;
 
@@ -31,6 +34,7 @@ public final class FluxVisualsClient implements ClientModInitializer {
         BotDebug.start();
         CONFIG_MANAGER.load();
         MULTI_BOT_MANAGER.initialize();
+        dev.fuga.fluxvisuals.command.BindCommand.init();
         MinecraftClient startupClient = MinecraftClient.getInstance();
         LicenseManager.checkLicense(startupClient);
         if (startupClient.getSession() != null) {
@@ -96,7 +100,9 @@ public final class FluxVisualsClient implements ClientModInitializer {
             return;
         }
 
-        if (client.currentScreen instanceof dev.fuga.fluxvisuals.gui.ClickGuiScreen || client.currentScreen instanceof dev.fuga.fluxvisuals.gui.modern.ModernClickGuiScreen) {
+        if (client.currentScreen instanceof dev.fuga.fluxvisuals.gui.ClickGuiScreen
+                || client.currentScreen instanceof dev.fuga.fluxvisuals.gui.modern.ModernClickGuiScreen
+                || client.currentScreen instanceof ModernGui2Screen) {
             LicenseManager.checkLicense(client);
             if (!LicenseManager.isLicensed) {
                 client.setScreen(null);
@@ -111,6 +117,12 @@ public final class FluxVisualsClient implements ClientModInitializer {
         handleOpenGuiHotkey(client);
     }
 
+    public static void onGuiClosed() {
+        rightShiftWasDown = true;
+        suppressOpenModernGuiUntilKeyRelease = true;
+        lastGuiCloseTime = System.currentTimeMillis();
+    }
+
     private static void handleOpenGuiHotkey(MinecraftClient client) {
         if (client.getWindow() == null) {
             rightShiftWasDown = false;
@@ -120,23 +132,24 @@ public final class FluxVisualsClient implements ClientModInitializer {
 
         long window = client.getWindow().getHandle();
         int modernMenuKey = MODULE_MANAGER.getMenu() == null ? GLFW.GLFW_KEY_RIGHT_SHIFT : MODULE_MANAGER.getMenu().getKeyBind();
-        if (modernMenuKey == 0 || modernMenuKey == GLFW.GLFW_KEY_UNKNOWN) {
-            modernMenuKey = GLFW.GLFW_KEY_RIGHT_SHIFT;
-        }
+        boolean modernDown = modernMenuKey != GLFW.GLFW_KEY_UNKNOWN && modernMenuKey != 0 && GLFW.glfwGetKey(window, modernMenuKey) == GLFW.GLFW_PRESS;
 
-        // Modern GUI: Right Shift by default (or configured menu key)
-        boolean modernDown = GLFW.glfwGetKey(window, modernMenuKey) == GLFW.GLFW_PRESS;
+        // Premium ClickGui
+        int premiumMenuKey = PremiumClickGuiRenderer.getMenuKey();
+        boolean premiumDown = premiumMenuKey != GLFW.GLFW_KEY_UNKNOWN && premiumMenuKey != 0 && modernMenuKey != premiumMenuKey && GLFW.glfwGetKey(window, premiumMenuKey) == GLFW.GLFW_PRESS;
 
-        // Premium ClickGui on Backslash '\'
-        int premiumMenuKey = GLFW.GLFW_KEY_BACKSLASH;
-        boolean premiumDown = modernMenuKey != premiumMenuKey && GLFW.glfwGetKey(window, premiumMenuKey) == GLFW.GLFW_PRESS;
-
-        // Modern GUI on Right Shift
+        // Modern GUI on Menu Key (Right Shift or custom)
         if (!modernDown) {
             rightShiftWasDown = false;
             suppressOpenModernGuiUntilBackslashRelease = false;
-        } else if (!rightShiftWasDown && !suppressOpenModernGuiUntilBackslashRelease && client.currentScreen == null) {
-            openModernGui(client);
+            suppressOpenModernGuiUntilKeyRelease = false;
+        } else {
+            if (!rightShiftWasDown && !suppressOpenModernGuiUntilBackslashRelease && !suppressOpenModernGuiUntilKeyRelease && client.currentScreen == null) {
+                if (System.currentTimeMillis() - lastGuiCloseTime > 250L) {
+                    openModernGui(client);
+                    suppressOpenModernGuiUntilKeyRelease = true;
+                }
+            }
             rightShiftWasDown = true;
         }
 
@@ -144,9 +157,11 @@ public final class FluxVisualsClient implements ClientModInitializer {
         if (!premiumDown) {
             backslashWasDown = false;
             suppressOpenGuiUntilRightShiftRelease = false;
-        } else if (!backslashWasDown && !suppressOpenGuiUntilRightShiftRelease && client.currentScreen == null) {
-            if (LicenseManager.canOpenGui(client)) {
-                client.setScreen(new ClickGuiScreen(MODULE_MANAGER));
+        } else {
+            if (!backslashWasDown && !suppressOpenGuiUntilRightShiftRelease && client.currentScreen == null) {
+                if (LicenseManager.canOpenGui(client)) {
+                    client.setScreen(new ClickGuiScreen(MODULE_MANAGER));
+                }
             }
             backslashWasDown = true;
         }
@@ -157,7 +172,20 @@ public final class FluxVisualsClient implements ClientModInitializer {
         if (!LicenseManager.canOpenGui(client)) {
             return false;
         }
+        if (MODULE_MANAGER != null && MODULE_MANAGER.getMenu() != null && "Modern 2".equalsIgnoreCase(MODULE_MANAGER.getMenu().getGuiStyle())) {
+            client.setScreen(new ModernGui2Screen(MODULE_MANAGER));
+            return true;
+        }
         client.setScreen(new ModernClickGuiScreen(MODULE_MANAGER));
+        return true;
+    }
+
+    /** Opens the isolated second-menu scaffold used for the next UI iteration. */
+    public static boolean openModernGui2(MinecraftClient client) {
+        if (!LicenseManager.canOpenGui(client)) {
+            return false;
+        }
+        client.setScreen(new ModernGui2Screen(MODULE_MANAGER));
         return true;
     }
 }

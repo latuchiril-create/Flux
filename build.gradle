@@ -49,18 +49,31 @@ dependencies {
     // Optional Discord Rich Presence transport used by the DiscordRPC module.
     implementation files("discord-game-sdk4j-1.0.0.jar")
 
+    // ONNX Runtime for embedded AutoCaptcha neural network solver
+    implementation files("libs/onnxruntime-1.18.0.jar")
+
     testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
 }
 
 def baritoneJar = file("libs/baritone-unoptimized-fabric-1.15.0.jar")
 def discordSdkJar = file("discord-game-sdk4j-1.0.0.jar")
+def onnxJar = file("libs/onnxruntime-1.18.0.jar")
 tasks.named("jar") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     // Fabric Loader does not add an arbitrary raw library JAR from
     // META-INF/jars to the mod class loader. DiscordRPC imports the SDK
     // directly, so embed its classes in the main mod namespace instead.
     from(zipTree(discordSdkJar)) {
         exclude "META-INF/MANIFEST.MF"
         exclude "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA"
+    }
+    from(zipTree(onnxJar)) {
+        exclude "META-INF/MANIFEST.MF"
+        exclude "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA"
+        exclude "ai/onnxruntime/native/linux-**"
+        exclude "ai/onnxruntime/native/osx-**"
+        exclude "**/*.pdb"
+        exclude "**/*.dSYM/**"
     }
     into("META-INF/jars") {
         from(baritoneJar)

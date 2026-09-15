@@ -25,7 +25,8 @@ public final class MultiModeSetting extends Setting<Set<String>> {
     }
 
     public void toggleOption(String option) {
-        Set<String> current = new java.util.HashSet<>(get());
+        Set<String> raw = get();
+        Set<String> current = (raw != null) ? new java.util.LinkedHashSet<>(raw) : new java.util.LinkedHashSet<>();
         if (current.contains(option)) {
             current.remove(option);
         } else {

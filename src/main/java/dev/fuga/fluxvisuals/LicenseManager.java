@@ -177,7 +177,9 @@ public final class LicenseManager {
         isLicensed = false;
         if (client != null) {
             client.execute(() -> {
-                if (client.currentScreen instanceof ClickGuiScreen || client.currentScreen instanceof ModernClickGuiScreen) {
+                if (client.currentScreen instanceof ClickGuiScreen
+                        || client.currentScreen instanceof ModernClickGuiScreen
+                        || client.currentScreen instanceof dev.fuga.fluxvisuals.gui.modern.ModernGui2Screen) {
                     client.setScreen(null);
                 }
                 if (wasLicensedBefore && client.player != null) {

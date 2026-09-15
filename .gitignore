@@ -11,3 +11,7 @@ logs/
 .gemini/
 .opencode/
 *.tmp
+backups/
+*.rar
+*.zip
+libs/onnxruntime-1.18.0.jar

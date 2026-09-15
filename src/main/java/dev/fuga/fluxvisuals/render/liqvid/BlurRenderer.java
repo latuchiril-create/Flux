@@ -11,12 +11,15 @@ import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.GlBackend;
 import net.minecraft.client.texture.GlTexture;
 import net.minecraft.client.util.Window;
+import net.minecraft.client.gui.DrawContext;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import dev.fuga.fluxvisuals.render.Render2D;
 import dev.fuga.fluxvisuals.render.liqvid.ShaderProgram;
 import dev.fuga.fluxvisuals.render.liqvid.ShaderBuilder;
 import dev.fuga.fluxvisuals.render.util.GlStateGuard;
@@ -24,7 +27,6 @@ import dev.fuga.fluxvisuals.render.util.GlStateGuard;
 /**
  * Fast background blur for HUD/GUI rects.
  *
- * Optimization strategy (near-zero FPS cost):
  *  - The first Gaussian pass samples the main framebuffer color texture directly
  *    into a full-resolution target, so no framebuffer blit or lossy downsample is
  *    needed.
@@ -255,6 +257,50 @@ public final class BlurRenderer {
     }
 
     public static void drawLiquidGlass(
+            DrawContext context,
+            float x,
+            float y,
+            float width,
+            float height,
+            float radius,
+            java.awt.Color tint,
+            float opacity,
+            float distortion,
+            float edgeLight,
+            float shine,
+            float blurStrength,
+            float innerDistortion,
+            boolean innerBlur
+    ) {
+        drawLiquidGlass(
+                context != null ? dev.fuga.fluxvisuals.render.Render2D.extractModelView(context) : null,
+                x, y, width, height, radius, tint, opacity, distortion, edgeLight, shine, blurStrength, innerDistortion, innerBlur
+        );
+    }
+
+    public static void drawLiquidGlass(
+            float x,
+            float y,
+            float width,
+            float height,
+            float radius,
+            java.awt.Color tint,
+            float opacity,
+            float distortion,
+            float edgeLight,
+            float shine,
+            float blurStrength,
+            float innerDistortion,
+            boolean innerBlur
+    ) {
+        drawLiquidGlass(
+                (Matrix4f) null,
+                x, y, width, height, radius, tint, opacity, distortion, edgeLight, shine, blurStrength, innerDistortion, innerBlur
+        );
+    }
+
+    public static void drawLiquidGlass(
+            org.joml.Matrix4f modelView,
             float x,
             float y,
             float width,
@@ -283,7 +329,7 @@ public final class BlurRenderer {
             float maxRadius = Math.min(Math.abs(width), Math.abs(height)) * 0.5F;
             float clampedRadius = Math.clamp(radius, 0.0F, maxRadius);
 
-            liquidGlassProgram.bind();
+            liquidGlassProgram.bind(modelView);
             liquidGlassProgram.setVec2("rectSize", Math.abs(width) * scale, Math.abs(height) * scale);
             liquidGlassProgram.setVec2("screenSize", window.getFramebufferWidth(), window.getFramebufferHeight());
             liquidGlassProgram.setFloat("radius", clampedRadius * scale);

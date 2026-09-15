@@ -1,0 +1,530 @@
+{
+  "atlas": {
+    "type": "msdf",
+    "distanceRange": 12,
+    "distanceRangeMiddle": 0,
+    "size": 128,
+    "width": 1024,
+    "height": 512,
+    "yOrigin": "bottom"
+  },
+  "metrics": {
+    "emSize": 1,
+    "lineHeight": 1,
+    "ascender": 1,
+    "descender": 0
+  },
+  "glyphs": [
+    {
+      "unicode": 60161,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 0,
+        "bottom": 384,
+        "right": 128,
+        "top": 512
+      },
+      "name": "plus"
+    },
+    {
+      "unicode": 60162,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 128,
+        "bottom": 384,
+        "right": 256,
+        "top": 512
+      },
+      "name": "monitor"
+    },
+    {
+      "unicode": 60163,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 256,
+        "bottom": 384,
+        "right": 384,
+        "top": 512
+      },
+      "name": "bot"
+    },
+    {
+      "unicode": 60164,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 384,
+        "bottom": 384,
+        "right": 512,
+        "top": 512
+      },
+      "name": "layout-dashboard"
+    },
+    {
+      "unicode": 60165,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 512,
+        "bottom": 384,
+        "right": 640,
+        "top": 512
+      },
+      "name": "cpu"
+    },
+    {
+      "unicode": 60166,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 640,
+        "bottom": 384,
+        "right": 768,
+        "top": 512
+      },
+      "name": "file-cog"
+    },
+    {
+      "unicode": 60167,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 768,
+        "bottom": 384,
+        "right": 896,
+        "top": 512
+      },
+      "name": "cloud"
+    },
+    {
+      "unicode": 60168,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 896,
+        "bottom": 384,
+        "right": 1024,
+        "top": 512
+      },
+      "name": "settings"
+    },
+    {
+      "unicode": 60169,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 0,
+        "bottom": 256,
+        "right": 128,
+        "top": 384
+      },
+      "name": "network"
+    },
+    {
+      "unicode": 60170,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 128,
+        "bottom": 256,
+        "right": 256,
+        "top": 384
+      },
+      "name": "radio"
+    },
+    {
+      "unicode": 60171,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 256,
+        "bottom": 256,
+        "right": 384,
+        "top": 384
+      },
+      "name": "rotate-cw"
+    },
+    {
+      "unicode": 60172,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 384,
+        "bottom": 256,
+        "right": 512,
+        "top": 384
+      },
+      "name": "power"
+    },
+    {
+      "unicode": 60173,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 512,
+        "bottom": 256,
+        "right": 640,
+        "top": 384
+      },
+      "name": "trash-2"
+    },
+    {
+      "unicode": 60174,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 640,
+        "bottom": 256,
+        "right": 768,
+        "top": 384
+      },
+      "name": "sword"
+    },
+    {
+      "unicode": 60175,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 768,
+        "bottom": 256,
+        "right": 896,
+        "top": 384
+      },
+      "name": "mouse-pointer-click"
+    },
+    {
+      "unicode": 60176,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 896,
+        "bottom": 256,
+        "right": 1024,
+        "top": 384
+      },
+      "name": "download"
+    },
+    {
+      "unicode": 60177,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 0,
+        "bottom": 128,
+        "right": 128,
+        "top": 256
+      },
+      "name": "square"
+    },
+    {
+      "unicode": 60178,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 128,
+        "bottom": 128,
+        "right": 256,
+        "top": 256
+      },
+      "name": "message-square"
+    },
+    {
+      "unicode": 60179,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 256,
+        "bottom": 128,
+        "right": 384,
+        "top": 256
+      },
+      "name": "backpack"
+    },
+    {
+      "unicode": 60180,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 384,
+        "bottom": 128,
+        "right": 512,
+        "top": 256
+      },
+      "name": "menu"
+    },
+    {
+      "unicode": 60181,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 512,
+        "bottom": 128,
+        "right": 640,
+        "top": 256
+      },
+      "name": "x"
+    },
+    {
+      "unicode": 60182,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 640,
+        "bottom": 128,
+        "right": 768,
+        "top": 256
+      },
+      "name": "arrow-up"
+    },
+    {
+      "unicode": 60183,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 768,
+        "bottom": 128,
+        "right": 896,
+        "top": 256
+      },
+      "name": "arrow-down"
+    },
+    {
+      "unicode": 60184,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 896,
+        "bottom": 128,
+        "right": 1024,
+        "top": 256
+      },
+      "name": "arrow-left"
+    },
+    {
+      "unicode": 60185,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 128,
+        "top": 128
+      },
+      "name": "arrow-right"
+    },
+    {
+      "unicode": 60186,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 128,
+        "bottom": 0,
+        "right": 256,
+        "top": 128
+      },
+      "name": "move-up"
+    },
+    {
+      "unicode": 60187,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 256,
+        "bottom": 0,
+        "right": 384,
+        "top": 128
+      },
+      "name": "chevrons-right"
+    },
+    {
+      "unicode": 60188,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 384,
+        "bottom": 0,
+        "right": 512,
+        "top": 128
+      },
+      "name": "check"
+    },
+    {
+      "unicode": 60189,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 512,
+        "bottom": 0,
+        "right": 640,
+        "top": 128
+      },
+      "name": "lock-keyhole"
+    },
+    {
+      "unicode": 60190,
+      "advance": 1,
+      "planeBounds": {
+        "left": 0,
+        "bottom": 0,
+        "right": 1,
+        "top": 1
+      },
+      "atlasBounds": {
+        "left": 640,
+        "bottom": 0,
+        "right": 768,
+        "top": 128
+      },
+      "name": "triangle-alert"
+    }
+  ],
+  "kerning": []
+}
