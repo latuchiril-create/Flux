@@ -86,15 +86,20 @@ public final class ModernGui2Renderer {
     private final Map<String, Float> sectionExpandAnims = new HashMap<>();
     private final Map<String, Boolean> dummyToggleStates = new HashMap<>();
 
-    private Tab selectedTab = Tab.COMBAT;
+    private static Tab savedSelectedTab = Tab.COMBAT;
+    private static String savedSearch = "";
+    private static float savedScrollY = 0.0F;
+    private static float savedTargetScrollY = 0.0F;
+
+    private Tab selectedTab = savedSelectedTab;
     private Tab previousTab = null;
     private float tabTransition = 1.0F; // 0 to 1 smooth transition
-    private String search = "";
+    private String search = savedSearch;
     private boolean searchFocused = false;
 
     // Scrolling
-    private float scrollY = 0.0F;
-    private float targetScrollY = 0.0F;
+    private float scrollY = savedScrollY;
+    private float targetScrollY = savedTargetScrollY;
     private float maxScrollY = 0.0F;
 
     // Module settings context menu
@@ -165,6 +170,10 @@ public final class ModernGui2Renderer {
         initSettings();
     }
 
+    public ModuleManager getModuleManager() {
+        return this.moduleManager;
+    }
+
     public boolean isClosing() {
         return closing;
     }
@@ -228,6 +237,12 @@ public final class ModernGui2Renderer {
         activeStringSetting = null;
         globalSettingsOpen = false;
         listeningMenuKey = false;
+
+        this.selectedTab = savedSelectedTab;
+        this.search = savedSearch;
+        this.scrollY = savedScrollY;
+        this.targetScrollY = savedTargetScrollY;
+        this.tabTransition = 1.0F;
     }
 
     private boolean isEn() {
@@ -346,15 +361,20 @@ public final class ModernGui2Renderer {
         // Reset hover detection for this frame
         currentFrameDotsHover = null;
 
+        // Check if mouse is hovering over any popup/overlay layer
+        boolean overOverlay = isMouseOverAnyOverlay((float) mouseX, (float) mouseY, scale, screenWidth, screenHeight);
+        int bgMouseX = overOverlay ? -9999 : mouseX;
+        int bgMouseY = overOverlay ? -9999 : mouseY;
+
         // Render Sidebar (Unified with panel, no isolated dark box)
-        drawSidebar(context, x, y, sidebarW, h, scale, mouseX, mouseY, alpha, dt);
+        drawSidebar(context, x, y, sidebarW, h, scale, bgMouseX, bgMouseY, alpha, dt);
 
         // Render Top Bar (Search + Hamburger)
         float contentX = x + sidebarW + 16.0F * scale;
         float contentW = w - sidebarW - 32.0F * scale;
         float topBarY = y + 16.0F * scale;
         float topBarH = 32.0F * scale;
-        drawTopBar(context, contentX, topBarY, contentW, topBarH, scale, mouseX, mouseY, alpha);
+        drawTopBar(context, contentX, topBarY, contentW, topBarH, scale, bgMouseX, bgMouseY, alpha);
 
         // Render Main Content (Module Columns or Management tabs) with GPU ScissorStack
         float listY = topBarY + topBarH + 12.0F * scale;
@@ -369,9 +389,9 @@ public final class ModernGui2Renderer {
             matrices.translate(0.0F, tabSlide);
 
             if (selectedTab.isManagement) {
-                drawManagementTab(context, contentX, listY + scrollY, contentW, listH, scale, mouseX, mouseY, tabAlpha, dt);
+                drawManagementTab(context, contentX, listY + scrollY, contentW, listH, scale, bgMouseX, bgMouseY, tabAlpha, dt);
             } else {
-                drawModuleColumns(context, contentX, listY + scrollY, contentW, listH, scale, mouseX, mouseY, tabAlpha, dt);
+                drawModuleColumns(context, contentX, listY + scrollY, contentW, listH, scale, bgMouseX, bgMouseY, tabAlpha, dt);
             }
 
             matrices.popMatrix();
@@ -380,7 +400,7 @@ public final class ModernGui2Renderer {
         }
 
         // Update tooltip hover state strictly based on dots hover
-        if (currentFrameDotsHover != null) {
+        if (!overOverlay && currentFrameDotsHover != null) {
             if (hoveredModule != currentFrameDotsHover) {
                 hoveredModule = currentFrameDotsHover;
                 hoverStartTime = System.currentTimeMillis();
@@ -389,20 +409,27 @@ public final class ModernGui2Renderer {
             hoveredModule = null;
         }
 
-        // Hover Tooltip
-        drawHoverTooltip(context, scale, mouseX, mouseY, alpha);
+        // Hover Tooltip (Suppressed if mouse is over any overlay)
+        if (!overOverlay) {
+            drawHoverTooltip(context, scale, mouseX, mouseY, alpha);
+        }
+
+        // Check if mouse is over dropdown or color picker for lower popup layers
+        boolean overTopPopups = isMouseOverDropdownOrPicker((float) mouseX, (float) mouseY, scale);
+        int popupMouseX = overTopPopups ? -9999 : mouseX;
+        int popupMouseY = overTopPopups ? -9999 : mouseY;
 
         // Popups (Context Menu & Global Settings)
         if (contextMenuModule != null) {
-            drawContextMenu(context, scale, mouseX, mouseY, alpha, dt);
+            drawContextMenu(context, scale, popupMouseX, popupMouseY, alpha, dt);
         }
         if (globalSettingsOpen) {
-            drawGlobalSettings(context, contentX + contentW - 250.0F * scale, topBarY + topBarH + 8.0F * scale, 250.0F * scale, scale, mouseX, mouseY, alpha);
+            drawGlobalSettings(context, contentX + contentW - 250.0F * scale, topBarY + topBarH + 8.0F * scale, 250.0F * scale, scale, popupMouseX, popupMouseY, alpha);
         }
 
         // Keybind Popover Modal
         if (activeBindModule != null && !listeningFullscreenKey) {
-            drawKeybindPopover(context, scale, mouseX, mouseY, alpha, dt);
+            drawKeybindPopover(context, scale, popupMouseX, popupMouseY, alpha, dt);
         }
 
         // Floating Dropdowns (Always floats on top of context menu and cards)
@@ -2470,9 +2497,12 @@ public final class ModernGui2Renderer {
                     if (selectedTab != tab) {
                         previousTab = selectedTab;
                         selectedTab = tab;
+                        savedSelectedTab = tab;
                         tabTransition = 0.0F; // Smooth cross-fade animation!
                         targetScrollY = 0.0F;
                         scrollY = 0.0F;
+                        savedScrollY = 0.0F;
+                        savedTargetScrollY = 0.0F;
                     }
                     return true;
                 }
@@ -2500,6 +2530,7 @@ public final class ModernGui2Renderer {
             float clrY = topBarY + (topBarH - clrSize) * 0.5F;
             if (inside((float) mouseX, (float) mouseY, clrX, clrY, clrSize, clrSize)) {
                 search = "";
+                savedSearch = "";
                 return true;
             }
         }
@@ -2703,6 +2734,8 @@ public final class ModernGui2Renderer {
 
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         float scale = getGuiScale();
+        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
+        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
 
         // 1. Scroll inside Context Menu if cursor is hovering over it
         if (contextMenuModule != null) {
@@ -2721,12 +2754,10 @@ public final class ModernGui2Renderer {
                     else if (s instanceof KeybindSetting) contentH += 26.0F * scale;
                     else if (s instanceof ColorSetting) contentH += 26.0F * scale;
                     else if (s instanceof StringSetting) contentH += 38.0F * scale;
+                    else if (s instanceof ActionSetting) contentH += 28.0F * scale;
                     else contentH += 24.0F * scale;
                 }
             }
-
-            int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
-            int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
 
             float maxVisibleSettingsH = Math.min(contentH, Math.min(300.0F * scale, screenH - 120.0F * scale));
             float visibleSettingsH = maxVisibleSettingsH;
@@ -2738,9 +2769,14 @@ public final class ModernGui2Renderer {
             if (inside((float) mouseX, (float) mouseY, cmX, cmY, cardW, cardH)) {
                 if (maxContextMenuScrollY > 0.0F) {
                     contextMenuScrollY = Math.min(0.0F, Math.max(-maxContextMenuScrollY, (float) (contextMenuScrollY + amount * 24.0F * scale)));
-                    return true;
                 }
+                return true;
             }
+        }
+
+        // If hovering over any overlay/popup, consume scroll so background doesn't scroll underneath
+        if (isMouseOverAnyOverlay((float) mouseX, (float) mouseY, scale, screenW, screenH)) {
+            return true;
         }
 
         // 2. Scroll main content
@@ -2826,10 +2862,12 @@ public final class ModernGui2Renderer {
             if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 if (!search.isEmpty()) {
                     search = search.substring(0, search.length() - 1);
+                    savedSearch = search;
                 }
                 return true;
             } else if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER) {
                 searchFocused = false;
+                savedSearch = search;
                 return true;
             }
         }
@@ -2854,6 +2892,7 @@ public final class ModernGui2Renderer {
 
         if (searchFocused) {
             search += chr;
+            savedSearch = search;
             return true;
         }
 
@@ -2881,6 +2920,11 @@ public final class ModernGui2Renderer {
     }
 
     public void removed() {
+        savedSelectedTab = selectedTab;
+        savedSearch = search;
+        savedScrollY = scrollY;
+        savedTargetScrollY = targetScrollY;
+
         contextMenuModule = null;
         activeColorPicker = null;
         activeBindModule = null;
@@ -2892,6 +2936,155 @@ public final class ModernGui2Renderer {
         searchFocused = false;
         hexFocused = false;
         listeningSettingBind = null;
+    }
+
+    public boolean isMouseOverFullscreenModal() {
+        return listeningFullscreenKey && activeBindModule != null;
+    }
+
+    public boolean isMouseOverColorPicker(float mouseX, float mouseY, float scale) {
+        if (activeColorPicker == null) return false;
+        float pickW = 196.0F * scale;
+        float pickH = 164.0F * scale;
+        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
+        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
+
+        float px, py;
+        if (contextMenuModule != null) {
+            px = contextMenuX + 228.0F * scale;
+            if (px + pickW > screenW - 10.0F) {
+                px = Math.max(10.0F, contextMenuX - pickW - 8.0F * scale);
+            }
+            py = Math.max(10.0F, Math.min(contextMenuY, screenH - pickH - 10.0F));
+        } else {
+            px = (screenW - pickW) * 0.5F;
+            py = (screenH - pickH) * 0.5F;
+        }
+        return inside(mouseX, mouseY, px, py, pickW, pickH);
+    }
+
+    public boolean isMouseOverDropdown(float mouseX, float mouseY, float scale) {
+        if (dropdownAnim <= 0.01F) return false;
+        List<String> options = null;
+        if (openDropdownMode != null) options = openDropdownMode.getModes();
+        else if (openDropdownMulti != null) options = openDropdownMulti.getAllOptions();
+        else if ("lang".equals(openGlobalDropdown)) options = List.of("Русский", "English");
+        else if ("scale".equals(openGlobalDropdown)) options = Menu.SCALE_MODES;
+        else if ("preset".equals(openGlobalDropdown)) options = Menu.THEME_PRESETS;
+
+        if (options == null || options.isEmpty()) return false;
+
+        float maxOptW = 0.0F;
+        float extraPadding = (openDropdownMulti != null) ? 38.0F * scale : 24.0F * scale;
+        for (String opt : options) {
+            float ow = ModernFont.getWidth(opt, 9.5F * scale, ModernFont.Type.INTER_SEMIBOLD);
+            if (ow > maxOptW) maxOptW = ow;
+        }
+        float menuW = Math.max(dropdownW, Math.max(105.0F * scale, maxOptW + extraPadding));
+
+        float itemH = 21.0F * scale;
+        float menuH = options.size() * itemH + 6.0F * scale;
+        float menuX = (dropdownTriggerW > 0.0F) ? (dropdownTriggerX + dropdownTriggerW - menuW) : dropdownX;
+        float menuY = dropdownY;
+
+        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
+        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
+
+        if (menuY + menuH > screenH - 10.0F) {
+            menuY = Math.max(10.0F, dropdownY - menuH - 24.0F * scale);
+        }
+        if (menuX + menuW > screenW - 10.0F) {
+            menuX = Math.max(10.0F, screenW - menuW - 10.0F);
+        }
+        if (menuX < 10.0F) {
+            menuX = 10.0F;
+        }
+
+        return inside(mouseX, mouseY, menuX, menuY, menuW, menuH);
+    }
+
+    public boolean isMouseOverKeybindPopover(float mouseX, float mouseY, float scale) {
+        if (activeBindModule == null || listeningFullscreenKey) return false;
+        int boundKey = ModernClickGuiRenderer.MODULE_BINDS.getOrDefault(activeBindModule.getName(), GLFW.GLFW_KEY_UNKNOWN);
+        boolean isBound = (boundKey != GLFW.GLFW_KEY_UNKNOWN && boundKey != 0);
+
+        float popW = 216.0F * scale;
+        float popH = isBound ? (154.0F * scale) : (124.0F * scale);
+        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
+        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
+
+        float px = Math.max(10.0F, Math.min(bindPopoverX, screenW - popW - 10.0F));
+        float py = Math.max(10.0F, Math.min(bindPopoverY, screenH - popH - 10.0F));
+
+        return inside(mouseX, mouseY, px, py, popW, popH);
+    }
+
+    public boolean isMouseOverGlobalSettings(float mouseX, float mouseY, float scale, int screenWidth, int screenHeight) {
+        if (!globalSettingsOpen) return false;
+        float mainW = 780.0F * scale;
+        float sidebarW = 188.0F * scale;
+        float mainX = (screenWidth - mainW) * 0.5F;
+        float contentX = mainX + sidebarW + 16.0F * scale;
+        float contentW = mainW - sidebarW - 32.0F * scale;
+        float mainH = 480.0F * scale;
+        float mainY = (screenHeight - mainH) * 0.5F;
+        float topBarY = mainY + 16.0F * scale;
+        float topBarH = 32.0F * scale;
+
+        float gsX = contentX + contentW - 250.0F * scale;
+        float gsY = topBarY + topBarH + 8.0F * scale;
+        float gsW = 250.0F * scale;
+        float gsH = 156.0F * scale;
+
+        return inside(mouseX, mouseY, gsX, gsY, gsW, gsH);
+    }
+
+    public boolean isMouseOverContextMenu(float mouseX, float mouseY, float scale) {
+        if (contextMenuModule == null) return false;
+        List<Setting<?>> settings = moduleSettings.get(contextMenuModule);
+        if (settings == null || settings.isEmpty()) return false;
+
+        float cardW = 220.0F * scale;
+        float headerH = 34.0F * scale;
+
+        float contentH = 0.0F;
+        for (Setting<?> s : settings) {
+            if (!s.isVisible()) continue;
+            if (s instanceof BooleanSetting) contentH += 26.0F * scale;
+            else if (s instanceof SliderSetting) contentH += 34.0F * scale;
+            else if (s instanceof ModeSetting) contentH += 26.0F * scale;
+            else if (s instanceof MultiModeSetting) contentH += 26.0F * scale;
+            else if (s instanceof KeybindSetting) contentH += 26.0F * scale;
+            else if (s instanceof ColorSetting) contentH += 26.0F * scale;
+            else if (s instanceof StringSetting) contentH += 38.0F * scale;
+            else if (s instanceof ActionSetting) contentH += 28.0F * scale;
+            else contentH += 24.0F * scale;
+        }
+
+        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
+        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
+
+        float maxVisibleSettingsH = Math.min(contentH, Math.min(300.0F * scale, screenH - 120.0F * scale));
+        float visibleSettingsH = maxVisibleSettingsH;
+        float cardH = headerH + visibleSettingsH + 10.0F * scale;
+
+        float x = Math.max(10.0F, Math.min(contextMenuX, screenW - cardW - 10.0F));
+        float y = Math.max(10.0F, Math.min(contextMenuY, screenH - cardH - 10.0F));
+
+        return inside(mouseX, mouseY, x, y, cardW, cardH);
+    }
+
+    public boolean isMouseOverDropdownOrPicker(float mouseX, float mouseY, float scale) {
+        return isMouseOverFullscreenModal() || isMouseOverColorPicker(mouseX, mouseY, scale) || isMouseOverDropdown(mouseX, mouseY, scale);
+    }
+
+    public boolean isMouseOverAnyOverlay(float mouseX, float mouseY, float scale, int screenWidth, int screenHeight) {
+        return isMouseOverFullscreenModal()
+                || isMouseOverColorPicker(mouseX, mouseY, scale)
+                || isMouseOverDropdown(mouseX, mouseY, scale)
+                || isMouseOverKeybindPopover(mouseX, mouseY, scale)
+                || isMouseOverContextMenu(mouseX, mouseY, scale)
+                || isMouseOverGlobalSettings(mouseX, mouseY, scale, screenWidth, screenHeight);
     }
 
     private static boolean inside(float mouseX, float mouseY, float x, float y, float w, float h) {

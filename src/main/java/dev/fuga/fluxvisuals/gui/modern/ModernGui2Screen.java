@@ -9,12 +9,16 @@ import org.lwjgl.glfw.GLFW;
 
 /** Second bindable entry point using the stable modern ClickGUI renderer. */
 public final class ModernGui2Screen extends Screen {
+    private static ModernGui2Renderer sessionRenderer;
     private final ModernGui2Renderer renderer;
     private boolean initialized;
 
     public ModernGui2Screen(ModuleManager moduleManager) {
         super(Text.literal("FLUX ModernGui2"));
-        this.renderer = new ModernGui2Renderer(moduleManager);
+        if (sessionRenderer == null || sessionRenderer.getModuleManager() != moduleManager) {
+            sessionRenderer = new ModernGui2Renderer(moduleManager);
+        }
+        this.renderer = sessionRenderer;
     }
 
     @Override
