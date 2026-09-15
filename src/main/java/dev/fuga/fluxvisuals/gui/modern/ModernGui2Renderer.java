@@ -1267,16 +1267,33 @@ public final class ModernGui2Renderer {
                     float btnH = 22.0F * scale;
                     boolean btnHover = inside(mouseX, mouseY, btnX, btnY, btnW, btnH);
 
-                    int bgCol = btnHover ? color(getAccentColor(), 0.22F) : color(0xFF0D111A, 0.85F);
-                    int borderCol = btnHover ? color(getAccentColor(), 0.9F) : color(0x20FFFFFF, alpha);
-                    int textCol = btnHover ? color(0xFFFFFFFF, alpha) : color(getAccentColor(), alpha);
+                    // Liquid Glass substrate without harsh outline
+                    Color glassTint = btnHover ? new Color(22, 32, 54, 220) : new Color(12, 16, 26, 175);
+                    BlurRenderer.drawLiquidGlass(
+                            context,
+                            btnX, btnY, btnW, btnH, 5.0F * scale,
+                            glassTint, alpha,
+                            1.2F, 0.9F, 0.0F,
+                            1.0F, 0.6F, true
+                    );
+                    int depthCol = btnHover ? color(getAccentColor(), 0.22F) : color(0x50030509, alpha);
+                    Render2D.drawRound(context, btnX, btnY, btnW, btnH, 5.0F * scale, depthCol);
 
-                    Render2D.drawRound(context, btnX, btnY, btnW, btnH, 4.0F * scale, color(bgCol, alpha));
-                    Render2D.drawRoundOutline(context, btnX, btnY, btnW, btnH, 4.0F * scale, 1.0F, borderCol);
+                    // Crisp icon + clean text (no blocky unicode gear)
+                    String rawText = act.getButtonText();
+                    if (rawText == null || rawText.isEmpty()) rawText = act.getName();
+                    String cleanText = rawText.replaceAll("^[⚙💧🔧✓]\\s*", "").trim();
 
-                    String btnText = act.getButtonText();
-                    if (btnText == null || btnText.isEmpty()) btnText = act.getName();
-                    ModernFont.drawCentered(context, btnText, btnX + btnW * 0.5F, btnY + 6.0F * scale, 9.5F * scale, textCol, ModernFont.Type.INTER_SEMIBOLD);
+                    Identifier icon = rawText.contains("💧") ? ICON_PIPETTE : ICON_SETTINGS;
+                    float iconSize = 11.5F * scale;
+                    float textW = ModernFont.getWidth(cleanText, 9.5F * scale, ModernFont.Type.INTER_SEMIBOLD);
+                    float gap = 5.0F * scale;
+                    float totalW = iconSize + gap + textW;
+                    float startX = btnX + (btnW - totalW) * 0.5F;
+
+                    int itemCol = btnHover ? color(0xFFFFFFFF, alpha) : color(getAccentColor(), alpha);
+                    ModernClickGuiRenderer.drawTexture(context, icon, startX, btnY + (btnH - iconSize) * 0.5F, iconSize, iconSize, itemCol);
+                    ModernFont.draw(context, cleanText, startX + iconSize + gap, btnY + 6.0F * scale, 9.5F * scale, itemCol, ModernFont.Type.INTER_SEMIBOLD);
 
                     curY += rowH;
                 }

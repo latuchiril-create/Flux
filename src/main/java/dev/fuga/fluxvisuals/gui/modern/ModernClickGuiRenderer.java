@@ -1052,7 +1052,7 @@ public final class ModernClickGuiRenderer {
         } else if ("AutoBuy".equalsIgnoreCase(name)) {
             AutoBuy ab = moduleManager.getAutoBuy();
             ItemResorter ir = moduleManager.getItemResorter();
-            list.add(new ActionSetting("Меню конфигурации", "⚙ Открыть меню", () -> {
+            list.add(new ActionSetting("Меню конфигурации", "Открыть меню", () -> {
                 MinecraftClient mc = MinecraftClient.getInstance();
                 if (mc != null) {
                     mc.setScreen(new AutoBuyConfigScreen(mc.currentScreen));
@@ -2378,16 +2378,32 @@ public final class ModernClickGuiRenderer {
         boolean hover = inside(mouseX, mouseY, x, btnY, w, btnH);
         boolean success = "sync_all_success".equals(colorFeedback) && (System.currentTimeMillis() - colorFeedbackTime < 1300L);
 
-        int fill = success ? color(0xFF22C55E, alpha * 0.18F) : (hover ? color(UI_SURFACE_HOVER, alpha) : color(UI_SURFACE, alpha));
-        int border = success ? color(0xFF22C55E, alpha) : (hover ? color(getAccentColor(), alpha * 0.85F) : color(UI_BORDER_SOFT, alpha));
-        int textCol = success ? color(0xFF86EFAC, alpha) : (hover ? color(getAccentStrongColor(), alpha) : color(getAccentColor(), alpha));
+        // Liquid glass background
+        Color glassTint = success ? new Color(34, 197, 94, 180) : (hover ? new Color(22, 32, 54, 220) : new Color(12, 16, 26, 175));
+        BlurRenderer.drawLiquidGlass(
+                context,
+                x, btnY, w, btnH, 5.0F * scale,
+                glassTint, alpha,
+                1.2F, 0.9F, 0.0F,
+                1.0F, 0.6F, true
+        );
+        int depthCol = success ? color(0xFF22C55E, alpha * 0.20F) : (hover ? color(getAccentColor(), 0.22F) : color(0x50030509, alpha));
+        Render2D.drawRound(context, x, btnY, w, btnH, 5.0F * scale, depthCol);
 
-        Render2D.drawRound(context, x, btnY, w, btnH, CONTROL_RADIUS * scale, fill);
-        Render2D.drawRoundOutline(context, x, btnY, w, btnH, CONTROL_RADIUS * scale, 1.0F, border);
+        String rawText = success ? t("✓ Все цвета синхронизированы!", "✓ All colors synced!") : act.getButtonText();
+        String cleanText = rawText != null ? rawText.replaceAll("^[⚙💧🔧✓]\\s*", "").trim() : "";
+        Identifier icon = rawText != null && rawText.contains("💧") ? ICON_PIPETTE : ICON_SETTINGS;
 
-        String text = success ? t("✓ Все цвета синхронизированы!", "✓ All colors synced!") : act.getButtonText();
-        ModernFont.drawCentered(context, text, x + w * 0.5F, centeredTextY(btnY, btnH, 10.5F * scale, ModernFont.Type.INTER_SEMIBOLD),
-                10.5F * scale, textCol, ModernFont.Type.INTER_SEMIBOLD);
+        float iconSize = 11.5F * scale;
+        float textW = ModernFont.getWidth(cleanText, 10.0F * scale, ModernFont.Type.INTER_SEMIBOLD);
+        float gap = 5.0F * scale;
+        float totalW = iconSize + gap + textW;
+        float startX = x + (w - totalW) * 0.5F;
+
+        int textCol = success ? color(0xFF86EFAC, alpha) : (hover ? color(0xFFFFFFFF, alpha) : color(getAccentColor(), alpha));
+        drawTexture(context, icon, startX, btnY + (btnH - iconSize) * 0.5F, iconSize, iconSize, textCol);
+        ModernFont.draw(context, cleanText, startX + iconSize + gap, centeredTextY(btnY, btnH, 10.0F * scale, ModernFont.Type.INTER_SEMIBOLD),
+                10.0F * scale, textCol, ModernFont.Type.INTER_SEMIBOLD);
     }
 
     private void drawStringRow(DrawContext context, StringSetting str, float x, float y, float w, int mouseX, int mouseY, float alpha, float scale) {
